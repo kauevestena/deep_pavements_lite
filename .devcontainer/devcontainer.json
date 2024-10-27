@@ -1,6 +1,6 @@
 {
     "name": "Deep Pavements Lite",
-    "image": "deep-pavements-lite",
+    "image": "deep_pavements_lite",
     "workspaceFolder": "/workspace/deep_pavements_lite",
     // "settings": {
     //     "terminal.integrated.shell.linux": "/bin/bash"
