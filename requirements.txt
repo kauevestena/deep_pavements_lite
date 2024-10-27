@@ -1,0 +1,12 @@
+wget
+requests
+opencv-python
+Pillow
+gpustat
+tabulate
+cmocean
+scipy
+geopandas
+transformers
+osmnx
+scikit-image

@@ -1,0 +1,21 @@
+{
+    "name": "Deep Pavements Lite",
+    "image": "deep-pavements-lite",
+    "workspaceFolder": "/workspace/deep_pavements_lite",
+    // "settings": {
+    //     "terminal.integrated.shell.linux": "/bin/bash"
+    // },
+    // "extensions": [],
+    "postCreateCommand": "",
+    "remoteUser": "root",
+    "mounts": [
+        "source=/home/${localEnv:USER}/data/deep_pavements_lite,target=/workspace/data,type=bind"
+    ],
+    "runArgs": [
+        "--name",
+        "running_d_p_l",
+        "--gpus",
+        "all",
+        "-it"
+    ]
+}
