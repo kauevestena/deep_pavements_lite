@@ -5,12 +5,21 @@ This version of Deep Pavements is all-in-one package ("batteries-included"), mak
 
 # Docker Setup
 
-first, buid:
+first, buid (remember to change the token):
 
     docker build --tag 'deep_pavements_lite' .
 
-then run (please note that the mounted host folder is a suggestion, you can change it, but "workspace/data" must be used):
+To skip the precaching of weights, add `--build-arg TO_PRECACHE=false`
 
-    docker run --name running_d_p_l -v $HOME/data/deep_pavements_lite:/workspace/data --gpus all -it 'deep_pavements_lite' 
+then run (please note that the mounted host folder is a suggestion, you can change it, but "workspace/data" must be used!):
 
-(Or If you wanna use it inside VSCode, as a dev container, you can use the "devcontainer.json" at the .devcontainer folder)
+    MOUNT_FOLDER="$HOME/data/deep_pavements_lite"
+
+    mkdir -p $MOUNT_FOLDER
+
+    # don't forget to set the token!
+    echo "<YOUR MAPILLARY TOKEN>" > $MOUNT_FOLDER/mapillary_token
+
+    docker run --name running_d_p_l -v $MOUNT_FOLDER:/workspace/data --gpus all -it 'deep_pavements_lite' 
+
+(Or If you wanna use it inside VSCode, as a dev container, you can use the "devcontainer.json" at the .devcontainer folder, but don't forget to create the token file!)
