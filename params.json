@@ -1,0 +1,29 @@
+{
+    "min_lat": -25.465885,
+    "min_lon": -49.289067,
+    "max_lat": -25.462010,
+    "max_lon": -49.283842,
+    "mapillary_field": [
+        "altitude",
+        "atomic_scale",
+        "camera_parameters",
+        "camera_type",
+        "captured_at",
+        "compass_angle",
+        "computed_altitude",
+        "computed_compass_angle",
+        "computed_geometry",
+        "computed_rotation",
+        "creator",
+        "exif_orientation",
+        "geometry",
+        "height",
+        "is_pano",
+        "make",
+        "model",
+        "thumb_original_url",
+        "merge_cc",
+        "sequence",
+        "width"
+    ]
+}
