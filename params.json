@@ -1,8 +1,4 @@
 {
-    "min_lat": -25.465885,
-    "min_lon": -49.289067,
-    "max_lat": -25.462010,
-    "max_lon": -49.283842,
     "mapillary_field": [
         "altitude",
         "atomic_scale",
