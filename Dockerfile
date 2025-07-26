@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:latest
+FROM pytorch/pytorch:1.13.1-cuda11.6-cudnn8-runtime
 
 # prevent apt from hanging
 ARG DEBIAN_FRONTEND=noninteractive
@@ -7,11 +7,9 @@ ENV HOME=/workspace
 WORKDIR $HOME
 
 # general system dependencies:
-RUN apt update
-RUN apt install -y git
-RUN apt install libgl1-mesa-glx -y
-RUN apt install libglib2.0-0 -y
-RUN apt install wget -y
+RUN apt-get update && \
+    apt-get install -y git libgl1-mesa-glx libglib2.0-0 wget && \
+    rm -rf /var/lib/apt/lists/*
 
 ENV REPODIR=$HOME/deep_pavements_lite
 
@@ -20,9 +18,7 @@ COPY . $REPODIR
 WORKDIR $REPODIR
 
 # for mapillary downloading (submodule):
-RUN git clone https://github.com/kauevestena/my_mappilary_api.git
-RUN git submodule init
-RUN git submodule update
+RUN git submodule update --init --recursive
 RUN pip install -r my_mappilary_api/requirements.txt
 
 # CLIP:
@@ -42,4 +38,3 @@ RUN if [ "$TO_PRECACHE" = "true" ]; then \
     python precaching/precaching_clip.py && \
     python precaching/precaching_oneformer.py; \
     fi
-
