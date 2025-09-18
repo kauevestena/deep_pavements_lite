@@ -10,3 +10,8 @@ geopandas
 transformers
 osmnx
 scikit-image
+torch
+torchvision
+ftfy
+regex
+tqdm
