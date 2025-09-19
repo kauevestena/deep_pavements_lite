@@ -1,7 +1,0 @@
-requests
-geopandas
-shapely
-numpy
-pandas
-tqdm
-wget

@@ -18,7 +18,7 @@ COPY . $REPODIR
 WORKDIR $REPODIR
 
 # for mapillary downloading (submodule):
-# Note: submodule updated manually (no .gitmodules file)
+RUN git submodule update --init --recursive
 RUN pip install -r my_mappilary_api/requirements.txt
 
 # CLIP:

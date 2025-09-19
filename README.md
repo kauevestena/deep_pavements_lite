@@ -14,11 +14,13 @@ For development or testing without Docker:
 ```bash
 git clone https://github.com/kauevestena/deep_pavements_lite
 cd deep_pavements_lite
+git submodule update --init --recursive
 ```
 
 2) Install dependencies:
 ```bash
 pip install -r requirements.txt
+pip install -r my_mappilary_api/requirements.txt
 pip install git+https://github.com/openai/CLIP.git
 ```
 
@@ -38,7 +40,7 @@ python runner.py --lat_min <min_latitude> --lon_min <min_longitude> --lat_max <m
 
     git clone https://github.com/kauevestena/deep_pavements_lite
     cd deep_pavements_lite
-    # Note: No submodule update needed - all modules are now included
+    git submodule update --init --recursive
 
 2) Build the Docker image:
 
