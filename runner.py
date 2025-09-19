@@ -12,8 +12,20 @@ def main():
     args = parser.parse_args()
 
     # Read Mapillary token
-    with open("mapillary_token", "r") as f:
-        mapillary_token = f.read().strip()
+    token_files = ["mapillary_token", "workspace/data/mapillary_token", "data/mapillary_token"]
+    mapillary_token = None
+    
+    for token_file in token_files:
+        if os.path.exists(token_file):
+            with open(token_file, "r") as f:
+                mapillary_token = f.read().strip()
+            print(f"Found token in {token_file}")
+            break
+    
+    if not mapillary_token:
+        print("Error: No Mapillary token found. Please create a file named 'mapillary_token' with your token.")
+        print("Expected locations:", token_files)
+        return
 
     # Get features
     print("Getting features from Mapillary...")

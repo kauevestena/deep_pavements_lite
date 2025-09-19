@@ -1,10 +1,12 @@
 import os
+import torch
 
-DEVICE = "cuda"
+# Use CUDA if available, otherwise use CPU
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 params_path = "params.json"
 
-data_path = "../data"
+data_path = "data"
 
 
 ext_in = ".jpg"
