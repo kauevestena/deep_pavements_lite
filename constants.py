@@ -14,5 +14,19 @@ ext_out = ".png"
 
 pathway_categories = ["roads", "sidewalks"]
 
+default_surfaces = [
+    'asphalt',
+    'concrete',
+    'concrete_plates',
+    'grass',
+    'ground',
+    'sett',
+    'paving_stones',
+    'cobblestone',
+    'gravel',
+    'sand',
+    'compacted',
+]
+
 
 clip_model_path = "deep_pavements_clip_model.pt"
