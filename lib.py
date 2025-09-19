@@ -59,8 +59,7 @@ def process_images(data_path):
             with torch.no_grad():
                 image_features = model.encode_image(image_input)
 
-            # TODO: Add logic to classify and segment the image
-            # For now, we just extract features but don't use them
+            # TODO: Add logic to segment the image using oneformer, picking the polygons for the classes at "pathway_categories" in constants.py and then use clip to ask about the surface type, listed in constants.py. Output might be a json, with encoded polygons and labels.
 
         # Save output
         output_filename = filename.replace(ext_in, ext_out)
