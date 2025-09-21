@@ -12,7 +12,7 @@ data_path = "data"
 ext_in = ".jpg"
 ext_out = ".png"
 
-pathway_categories = ["roads", "sidewalks"]
+pathway_categories = ["roads", "sidewalks", "car"]
 
 default_surfaces = [
     'asphalt',

@@ -174,7 +174,7 @@ def segment_image_and_classify_surfaces(image: Image.Image, clip_model, clip_pre
             - 'filename': Original image filename
             - 'image_size': Image dimensions (width, height)
             - 'pathway_segments': List of detected segments, each containing:
-                - 'category': Segment type ('roads' or 'sidewalks')
+                - 'category': Segment type ('roads', 'sidewalks', or 'car')
                 - 'polygon': Flattened coordinate array [x1,y1,x2,y2,...]
                 - 'surface_type': Material classification result with confidence
                 - 'segment_id': Unique identifier for the segment
@@ -182,7 +182,7 @@ def segment_image_and_classify_surfaces(image: Image.Image, clip_model, clip_pre
     
     Note:
         - OneFormer models are loaded lazily on first call to optimize startup time
-        - Uses Cityscapes class mapping: road=0, sidewalk=1
+        - Uses Cityscapes class mapping: road=0, sidewalk=1, car=13
         - Saves JSON results to output directory automatically
         - Handles processing errors gracefully and returns error information
         
@@ -209,10 +209,11 @@ def segment_image_and_classify_surfaces(image: Image.Image, clip_model, clip_pre
         oneformer_model = segment_image_and_classify_surfaces.oneformer_model
         
         # Cityscapes dataset class mapping to our pathway categories of interest
-        # Based on standard Cityscapes annotations: road=0, sidewalk=1 (approximate indices)
+        # Based on standard Cityscapes annotations: road=0, sidewalk=1, car=13
         pathway_class_mapping = {
             'roads': [0],  # 'road' class in cityscapes
-            'sidewalks': [1]  # 'sidewalk' class in cityscapes
+            'sidewalks': [1],  # 'sidewalk' class in cityscapes
+            'car': [13]  # 'car' class in cityscapes
         }
         
         # Prepare image for OneFormer inference with semantic segmentation task
@@ -238,7 +239,7 @@ def segment_image_and_classify_surfaces(image: Image.Image, clip_model, clip_pre
             'pathway_segments': []
         }
         
-        # Process each pathway category (roads, sidewalks) defined in constants
+        # Process each pathway category (roads, sidewalks, car) defined in constants
         for category_name in pathway_categories:
             if category_name in pathway_class_mapping:
                 class_ids = pathway_class_mapping[category_name]
