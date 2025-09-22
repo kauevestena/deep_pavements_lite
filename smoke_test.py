@@ -96,6 +96,10 @@ def main():
     # Ensure data directory exists
     os.makedirs(data_path, exist_ok=True)
     
+    # Ensure test_data/outputs directory exists
+    test_output_dir = os.path.join("test_data", "outputs")
+    os.makedirs(test_output_dir, exist_ok=True)
+    
     # Check if test image exists
     test_image_path = os.path.join(data_path, 'test_image.jpg')
     if not os.path.exists(test_image_path):
@@ -118,10 +122,10 @@ def main():
     test_gdf = create_test_geodataframe()
     print(f"✓ Created GDF with {len(test_gdf)} test image(s)")
     
-    # Process the test image
-    print("🔄 Processing test image...")
+    # Process the test image in debug mode
+    print("🔄 Processing test image in debug mode...")
     try:
-        result_gdf = process_images(test_gdf, data_path, debug_mode=False)
+        result_gdf = process_images(test_gdf, data_path, debug_mode=True)
         
         if result_gdf.empty:
             print("⚠ No results generated (this may be expected without GPU/models)")
@@ -137,11 +141,38 @@ def main():
         traceback.print_exc()
         return 1
     
-    # Check outputs
+    # Copy debug outputs to test_data/outputs
+    debug_path = os.path.join(data_path, "debug_outputs")
+    if os.path.exists(debug_path):
+        import shutil
+        print("🔄 Copying debug outputs to test_data/outputs...")
+        
+        # Copy the entire debug_outputs directory to test_data/outputs
+        if os.path.exists(test_output_dir):
+            shutil.rmtree(test_output_dir)
+        shutil.copytree(debug_path, test_output_dir)
+        
+        # Count all files recursively in test_data/outputs
+        total_files = sum([len(files) for r, d, files in os.walk(test_output_dir)])
+        print(f"✓ Debug outputs copied to test_data/outputs ({total_files} files)")
+        
+        # List the structure
+        print("📁 Debug output structure:")
+        for root, dirs, files in os.walk(test_output_dir):
+            level = root.replace(test_output_dir, '').count(os.sep)
+            indent = ' ' * 2 * level
+            print(f"{indent}{os.path.basename(root)}/")
+            subindent = ' ' * 2 * (level + 1)
+            for file in files:
+                print(f"{subindent}{file}")
+    else:
+        print("⚠ No debug outputs found (expected with debug mode enabled)")
+    
+    # Check standard outputs
     output_path = os.path.join(data_path, "output")
     if os.path.exists(output_path):
         output_files = os.listdir(output_path)
-        print(f"✓ Output directory created with {len(output_files)} files:")
+        print(f"✓ Standard output directory created with {len(output_files)} files:")
         for file in output_files:
             print(f"  - {file}")
     
