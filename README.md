@@ -1,3 +1,5 @@
+[![Smoke Test](https://github.com/kauevestena/deep_pavements_lite/actions/workflows/smoke_test.yml/badge.svg)](https://github.com/kauevestena/deep_pavements_lite/actions/workflows/smoke_test.yml)
+
 # deep_pavements_lite
 
 This version of Deep Pavements is an all-in-one package ("batteries-included"), making use of a fixed-class network for the semantic segmentation part.
