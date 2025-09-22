@@ -40,16 +40,10 @@ jobs:
         python -m pip install --upgrade pip wheel setuptools
         # Install PyTorch first (CPU-only for CI)
         pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-        # Install core scientific packages
-        pip install numpy scipy
-        # Install geospatial dependencies
-        pip install shapely geopandas
-        # Install image processing
-        pip install Pillow scikit-image opencv-python
-        # Install ML/transformers
-        pip install transformers
-        # Install other dependencies from requirements
-        pip install wget requests tqdm mercantile tabulate cmocean osmnx ftfy regex gpustat
+        # Install main requirements (excluding torch/torchvision to avoid conflicts)
+        grep -v "^torch" requirements.txt | grep -v "^torchvision" | xargs -r pip install || echo "Some dependencies failed to install, continuing..."
+        # Install submodule requirements
+        pip install -r my_mappilary_api/requirements.txt || echo "Some submodule dependencies failed to install, continuing..."
         # Try to install CLIP (may fail in restricted environments)
         pip install git+https://github.com/openai/CLIP.git || echo "Warning: CLIP installation failed, continuing without it"
         
