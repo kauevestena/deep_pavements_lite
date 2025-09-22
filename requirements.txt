@@ -16,3 +16,4 @@ ftfy
 regex
 tqdm
 mercantile
+shapely

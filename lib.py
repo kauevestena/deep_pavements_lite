@@ -46,25 +46,38 @@ import numpy as np
 from tqdm import tqdm
 from transformers import OneFormerProcessor, OneFormerForUniversalSegmentation
 from skimage import measure
+from shapely.geometry import Polygon, LineString, Point
+from shapely.ops import split
+import geopandas as gpd
+import pandas as pd
 
-def process_images(data_path: str) -> None:
+def process_images(input_gdf: gpd.GeoDataFrame, data_path: str) -> gpd.GeoDataFrame:
     """
-    Process images in the specified directory using CLIP and OneFormer models.
+    Process images using metadata from a GeoDataFrame with CLIP and OneFormer models.
     
     This function implements the main image processing pipeline that:
     1. Loads CLIP model (with optional fine-tuned weights for surface classification)
-    2. Processes all JPEG images in the input directory
+    2. Processes images specified in the input GeoDataFrame
     3. Performs semantic segmentation and surface material classification
-    4. Saves processed images and detailed JSON metadata
+    4. Analyzes road/sidewalk layout and classifies surfaces on both sides
+    5. Returns structured geodataframe with surface classifications including GPS coordinates
     
     Args:
-        data_path (str): Path to directory containing input images (.jpg files).
-                        Output will be saved to a subdirectory named 'output'.
+        input_gdf (gpd.GeoDataFrame): GeoDataFrame containing image metadata with columns:
+                                     - 'id': Mapillary image ID
+                                     - 'file_path': Path to downloaded image file
+                                     - 'geometry': Point geometry with GPS coordinates
+                                     - Other Mapillary metadata fields
+        data_path (str): Path to directory containing input images and output directory.
     
     Returns:
-        None: Function saves results to filesystem rather than returning values.
-              - Processed images saved as PNG files in {data_path}/output/
-              - Segmentation metadata saved as JSON files with '_segments.json' suffix
+        gpd.GeoDataFrame: Results containing surface classifications with columns:
+            - filename: Original image filename
+            - image_id: Mapillary image ID
+            - road: Surface type of the main road
+            - left_sidewalk: Surface type of left side (or 'no_sidewalk'/'car_hindered')
+            - right_sidewalk: Surface type of right side (or 'no_sidewalk'/'car_hindered')
+            - geometry: Point geometry with actual GPS coordinates from Mapillary
     
     Raises:
         Exception: Gracefully handles model loading failures and continues with 
@@ -75,6 +88,8 @@ def process_images(data_path: str) -> None:
         - Supports fine-tuned CLIP models for improved surface classification
         - Progress is displayed using tqdm progress bars
         - Creates output directory automatically if it doesn't exist
+        - Images without road detections are skipped from results
+        - Uses actual GPS coordinates and image IDs from Mapillary metadata
     """
     # Load CLIP model
     device = torch.device(DEVICE)
@@ -108,19 +123,30 @@ def process_images(data_path: str) -> None:
     os.makedirs(output_path, exist_ok=True)
     print(f"Created output directory: {output_path}")
 
-    # Find all JPEG images in the input directory
-    image_files = [f for f in os.listdir(data_path) if f.endswith(ext_in)]
+    # Use the input GDF to get images to process
+    if input_gdf.empty:
+        print("No images found in input GeoDataFrame")
+        return gpd.GeoDataFrame()  # Return empty geodataframe
     
-    if not image_files:
-        print(f"No {ext_in} files found in {data_path}")
-        return
+    print(f"Found {len(input_gdf)} images to process")
     
-    print(f"Found {len(image_files)} images to process")
+    # Initialize list to store results for geodataframe
+    surface_results = []
     
     # Process each image with progress bar
-    for filename in tqdm(image_files, desc="Processing images"):
+    for idx, row in tqdm(input_gdf.iterrows(), total=len(input_gdf), desc="Processing images"):
+        # Get image information from the row
+        image_id = row['id']
+        filename = f"{image_id}.jpg"
+        image_path = row['file_path']
+        coordinates = row['geometry']
+        
+        # Check if file exists
+        if not os.path.exists(image_path):
+            print(f"Warning: Image file not found: {image_path}")
+            continue
+            
         # Load image from file
-        image_path = os.path.join(data_path, filename)
         image = Image.open(image_path)
 
         if model_available:
@@ -136,7 +162,33 @@ def process_images(data_path: str) -> None:
                 image, model, preprocess, device, filename
             )
 
-            # TODO: The next step is to pick-up the generated json (better as a python dict, natively) and do the following: if there's at least one detection of road/street, you gonna find the axis of the bbox of this polygon, extending it to the image boundaries(you can use shapely, add it as a requirement)in order to divide the image in two regions: left of street and right of the street; then for each side select the surface label of the biggest polygon, if any. Then a dictionary shall be created with the 3 surface entries: road; left_sidewalk; right_sidewalk. They are gonna be appended in a list created before the iteration part, that will become a geodataframe that shall be the true return of this function, in the CLI version a .geojson. There are special cases: if there are no road, no entry is generated, that picture is therefore forgotten; if there is no sidewalk in one side and no cars, then the value is "no_sidewalk", if there is no sidewalk, but there are cars, a ratio between the sum of the area (in pixels) of the car polygons and the road polygons must be computed, if the cars are less than thrice smaller than the roads (relatively few cars) then the value is "no_sidewalk", otherwise the value shall be "car_hindered" (lots of cars). 
+            # Process segmentation results to classify road and sidewalk surfaces
+            # Only process images that have road detections
+            road_polygons = []
+            for segment in segmentation_result.get('pathway_segments', []):
+                if segment.get('category') == 'roads':
+                    road_polygons.append(np.array(segment.get('polygon', [])))
+            
+            if road_polygons:  # Only process if we found roads
+                # Find the axis of the road and extend to image boundaries
+                road_axis = get_road_axis_line(road_polygons, image.size)
+                
+                if road_axis:
+                    # Classify surfaces on left and right sides of the road
+                    surface_classification = classify_sidewalk_regions(
+                        segmentation_result, road_axis, image.size
+                    )
+                    
+                    # Create result entry using actual metadata from Mapillary
+                    result_entry = {
+                        'filename': filename,
+                        'image_id': image_id,
+                        'road': surface_classification['road'],
+                        'left_sidewalk': surface_classification['left_sidewalk'],
+                        'right_sidewalk': surface_classification['right_sidewalk'],
+                        'geometry': coordinates  # Use actual GPS coordinates from Mapillary
+                    }
+                    surface_results.append(result_entry)
 
         # Save processed image to output directory
         output_filename = filename.replace(ext_in, ext_out)
@@ -146,6 +198,20 @@ def process_images(data_path: str) -> None:
         image.save(output_filepath)
 
     print("Image processing complete.")
+    
+    # Create geodataframe from results
+    if surface_results:
+        gdf = gpd.GeoDataFrame(surface_results, crs='EPSG:4326')
+        
+        # Save as GeoJSON in output directory
+        geojson_path = os.path.join(output_path, "surface_classifications.geojson")
+        gdf.to_file(geojson_path, driver='GeoJSON')
+        print(f"Saved surface classifications to {geojson_path}")
+        
+        return gdf
+    else:
+        print("No valid road detections found in any images.")
+        return gpd.GeoDataFrame()
 
 
 def segment_image_and_classify_surfaces(image: Image.Image, clip_model, clip_preprocess, 
@@ -457,3 +523,226 @@ def classify_surface_type(image: Image.Image, polygon: np.ndarray, clip_model,
             'surface': 'unknown',
             'confidence': 0.0
         }
+
+
+def calculate_polygon_area(polygon_coords: np.ndarray) -> float:
+    """
+    Calculate the area of a polygon in pixels.
+    
+    Args:
+        polygon_coords (np.ndarray): Flattened polygon coordinates [x1,y1,x2,y2,...]
+    
+    Returns:
+        float: Area of the polygon in square pixels
+    """
+    try:
+        # Convert flattened coordinates to list of (x,y) tuples
+        coords = [(polygon_coords[i], polygon_coords[i+1]) for i in range(0, len(polygon_coords), 2)]
+        if len(coords) < 3:
+            return 0.0
+        
+        polygon = Polygon(coords)
+        return polygon.area
+    except Exception:
+        return 0.0
+
+
+def get_road_axis_line(road_polygons: list, image_size: tuple) -> LineString:
+    """
+    Find the main axis of road polygons and extend it to image boundaries.
+    
+    Args:
+        road_polygons (list): List of road polygon coordinate arrays
+        image_size (tuple): Image dimensions (width, height)
+    
+    Returns:
+        LineString: Line representing the road axis extended to image boundaries
+    """
+    if not road_polygons:
+        return None
+    
+    try:
+        # Find the largest road polygon as the main road
+        largest_road = None
+        max_area = 0
+        
+        for polygon_coords in road_polygons:
+            area = calculate_polygon_area(polygon_coords)
+            if area > max_area:
+                max_area = area
+                largest_road = polygon_coords
+        
+        if largest_road is None:
+            return None
+        
+        # Convert to shapely polygon
+        coords = [(largest_road[i], largest_road[i+1]) for i in range(0, len(largest_road), 2)]
+        if len(coords) < 3:
+            return None
+        
+        road_polygon = Polygon(coords)
+        
+        # Get the bounding box of the road
+        minx, miny, maxx, maxy = road_polygon.bounds
+        
+        # Calculate the centroid and orientation
+        centroid = road_polygon.centroid
+        
+        # Determine the main axis direction by analyzing the polygon shape
+        # Use the longest dimension of the bounding box
+        if (maxx - minx) > (maxy - miny):
+            # Road is more horizontal - create vertical dividing line through centroid
+            x = centroid.x
+            line = LineString([(x, 0), (x, image_size[1])])
+        else:
+            # Road is more vertical - create horizontal dividing line through centroid
+            y = centroid.y
+            line = LineString([(0, y), (image_size[0], y)])
+        
+        return line
+    
+    except Exception as e:
+        print(f"Warning: Could not determine road axis: {e}")
+        return None
+
+
+def classify_sidewalk_regions(segmentation_result: dict, road_axis: LineString, image_size: tuple) -> dict:
+    """
+    Classify surfaces on the left and right sides of the road axis.
+    
+    Args:
+        segmentation_result (dict): Results from segment_image_and_classify_surfaces
+        road_axis (LineString): Line dividing the image into left and right regions
+        image_size (tuple): Image dimensions (width, height)
+    
+    Returns:
+        dict: Classification results with road, left_sidewalk, right_sidewalk entries
+    """
+    result = {
+        'road': 'unknown',
+        'left_sidewalk': 'no_sidewalk',
+        'right_sidewalk': 'no_sidewalk'
+    }
+    
+    try:
+        # Create image boundary polygon
+        image_polygon = Polygon([(0, 0), (image_size[0], 0), (image_size[0], image_size[1]), (0, image_size[1])])
+        
+        # Split image into left and right regions using road axis
+        try:
+            split_result = split(image_polygon, road_axis)
+            if len(split_result.geoms) >= 2:
+                left_region = split_result.geoms[0]
+                right_region = split_result.geoms[1]
+            else:
+                # If split fails, fall back to simple vertical/horizontal division
+                centroid = road_axis.centroid
+                if road_axis.coords[0][0] == road_axis.coords[1][0]:  # Vertical line
+                    x = centroid.x
+                    left_region = Polygon([(0, 0), (x, 0), (x, image_size[1]), (0, image_size[1])])
+                    right_region = Polygon([(x, 0), (image_size[0], 0), (image_size[0], image_size[1]), (x, image_size[1])])
+                else:  # Horizontal line
+                    y = centroid.y
+                    left_region = Polygon([(0, 0), (image_size[0], 0), (image_size[0], y), (0, y)])
+                    right_region = Polygon([(0, y), (image_size[0], y), (image_size[0], image_size[1]), (0, image_size[1])])
+        except Exception:
+            # Fallback: simple vertical division at image center
+            mid_x = image_size[0] / 2
+            left_region = Polygon([(0, 0), (mid_x, 0), (mid_x, image_size[1]), (0, image_size[1])])
+            right_region = Polygon([(mid_x, 0), (image_size[0], 0), (image_size[0], image_size[1]), (mid_x, image_size[1])])
+        
+        # Process segments
+        road_polygons = []
+        left_sidewalk_polygons = []
+        right_sidewalk_polygons = []
+        left_car_polygons = []
+        right_car_polygons = []
+        
+        for segment in segmentation_result.get('pathway_segments', []):
+            category = segment.get('category', '')
+            polygon_coords = np.array(segment.get('polygon', []))
+            surface_type = segment.get('surface_type', {}).get('surface', 'unknown')
+            
+            if len(polygon_coords) < 6:  # At least 3 points
+                continue
+            
+            # Convert to shapely polygon
+            coords = [(polygon_coords[i], polygon_coords[i+1]) for i in range(0, len(polygon_coords), 2)]
+            try:
+                poly = Polygon(coords)
+                if not poly.is_valid:
+                    continue
+                
+                if category == 'roads':
+                    road_polygons.append((poly, surface_type))
+                elif category == 'sidewalks':
+                    # Determine which side of the road axis this sidewalk is on
+                    centroid = poly.centroid
+                    if left_region.contains(centroid):
+                        left_sidewalk_polygons.append((poly, surface_type))
+                    elif right_region.contains(centroid):
+                        right_sidewalk_polygons.append((poly, surface_type))
+                elif category == 'car':
+                    # Determine which side of the road axis this car is on
+                    centroid = poly.centroid
+                    if left_region.contains(centroid):
+                        left_car_polygons.append((poly, surface_type))
+                    elif right_region.contains(centroid):
+                        right_car_polygons.append((poly, surface_type))
+                        
+            except Exception:
+                continue
+        
+        # Classify road surface (use the largest road polygon)
+        if road_polygons:
+            largest_road = max(road_polygons, key=lambda x: x[0].area)
+            result['road'] = largest_road[1]
+        
+        # Classify left sidewalk
+        result['left_sidewalk'] = classify_side_surface(left_sidewalk_polygons, left_car_polygons, road_polygons)
+        
+        # Classify right sidewalk
+        result['right_sidewalk'] = classify_side_surface(right_sidewalk_polygons, right_car_polygons, road_polygons)
+        
+        return result
+        
+    except Exception as e:
+        print(f"Warning: Could not classify sidewalk regions: {e}")
+        return result
+
+
+def classify_side_surface(sidewalk_polygons: list, car_polygons: list, road_polygons: list) -> str:
+    """
+    Classify the surface type for one side of the road.
+    
+    Args:
+        sidewalk_polygons (list): List of (polygon, surface_type) tuples for sidewalks
+        car_polygons (list): List of (polygon, surface_type) tuples for cars
+        road_polygons (list): List of (polygon, surface_type) tuples for roads
+    
+    Returns:
+        str: Surface classification ('no_sidewalk', 'car_hindered', or actual surface type)
+    """
+    if sidewalk_polygons:
+        # Use the largest sidewalk polygon
+        largest_sidewalk = max(sidewalk_polygons, key=lambda x: x[0].area)
+        return largest_sidewalk[1]
+    
+    if not car_polygons:
+        return 'no_sidewalk'
+    
+    # Calculate car to road area ratio
+    total_car_area = sum(poly.area for poly, _ in car_polygons)
+    total_road_area = sum(poly.area for poly, _ in road_polygons)
+    
+    if total_road_area == 0:
+        return 'no_sidewalk'
+    
+    car_road_ratio = total_car_area / total_road_area
+    
+    # If cars are less than 1/3 the size of roads, consider it no sidewalk
+    # Otherwise, it's car-hindered
+    if car_road_ratio < 1/3:
+        return 'no_sidewalk'
+    else:
+        return 'car_hindered'

@@ -37,14 +37,24 @@ def main():
         # Convert to GeoDataFrame
         gdf = mapillary_data_to_gdf(metadata)
 
-        # Download images
+        # Download images and get GDF with file paths
         print("Downloading images...")
+        # Add file paths to the GDF
+        gdf['file_path'] = gdf['id'].apply(lambda x: os.path.join(data_path, f"{x}.jpg"))
         download_all_pictures_from_gdf(gdf, data_path)
         print("Image download complete.")
 
-        # Process images
+        # Process images using the GDF with metadata
         print("Processing images...")
-        process_images(data_path)
+        result_gdf = process_images(gdf, data_path)
+        
+        if not result_gdf.empty:
+            print(f"Generated surface classifications for {len(result_gdf)} images.")
+            print("Surface classification summary:")
+            print(result_gdf[['filename', 'image_id', 'road', 'left_sidewalk', 'right_sidewalk']].to_string())
+        else:
+            print("No surface classifications generated.")
+            
         print("Image processing complete.")
     else:
         print("No features found for the given bounding box.")
