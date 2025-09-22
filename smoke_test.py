@@ -17,12 +17,71 @@ from shapely.geometry import Point
 from lib import process_images
 from constants import data_path
 
+def get_mapillary_token():
+    """Get Mapillary API token from environment or file"""
+    # Check environment variable first (for GitHub Actions)
+    token = os.environ.get('MAPILLARY_API')
+    if token:
+        return token.strip()
+    
+    # Check token files as fallback
+    token_files = ["mapillary_token", "workspace/data/mapillary_token", "data/mapillary_token"]
+    
+    for token_file in token_files:
+        if os.path.exists(token_file):
+            with open(token_file, "r") as f:
+                token = f.read().strip()
+            return token
+    
+    return None
+
 def create_test_geodataframe():
     """Create a minimal GeoDataFrame with test image data"""
-    # Create test data for a single image
+    # Try to use Mapillary API for dummy test data if token is available
+    mapillary_token = get_mapillary_token()
+    
+    if mapillary_token:
+        print("🔄 Attempting to create test data using Mapillary API...")
+        try:
+            from my_mappilary_api.mapillary_api import get_mapillary_images_metadata, mapillary_data_to_gdf, download_all_pictures_from_gdf
+            
+            # Small area around San Francisco for testing
+            lat_min, lon_min = 37.7749, -122.4194
+            lat_max, lon_max = 37.7759, -122.4184
+            
+            metadata = get_mapillary_images_metadata(
+                lon_min, lat_min, lon_max, lat_max, 
+                token=mapillary_token
+            )
+            
+            if metadata.get("data"):
+                # Limit to first image for testing
+                metadata['data'] = metadata['data'][:1]
+                gdf = mapillary_data_to_gdf(metadata)
+                
+                if not gdf.empty:
+                    # Add file paths and download images
+                    gdf['file_path'] = gdf['id'].apply(lambda x: os.path.join(data_path, f"{x}.jpg"))
+                    download_all_pictures_from_gdf(gdf, data_path)
+                    print("✓ Dummy test data created using Mapillary API")
+                    return gdf
+        except Exception as e:
+            print(f"⚠ Failed to create Mapillary test data: {e}")
+    
+    print("📋 Using fallback static test image...")
+    # Fallback to static test image
+    test_image_path = os.path.join(data_path, 'test_image.jpg')
+    
+    # Copy from test_data if needed
+    if not os.path.exists(test_image_path):
+        source_path = os.path.join('test_data', 'street_scene.jpg')
+        if os.path.exists(source_path):
+            import shutil
+            shutil.copy2(source_path, test_image_path)
+    
     test_data = {
         'id': ['test_image'],
-        'file_path': [os.path.join(data_path, 'test_image.jpg')],
+        'file_path': [test_image_path],
         'geometry': [Point(-122.4194, 37.7749)]  # San Francisco coordinates
     }
     
