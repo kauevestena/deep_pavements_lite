@@ -1,0 +1,126 @@
+name: Smoke Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1
+        
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip wheel setuptools
+        # Install PyTorch first (CPU-only for CI)
+        pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+        # Install core scientific packages
+        pip install numpy scipy
+        # Install geospatial dependencies
+        pip install shapely geopandas
+        # Install image processing
+        pip install Pillow scikit-image opencv-python
+        # Install ML/transformers
+        pip install transformers
+        # Install other dependencies from requirements
+        pip install wget requests tqdm mercantile tabulate cmocean osmnx ftfy regex gpustat
+        # Try to install CLIP (may fail in restricted environments)
+        pip install git+https://github.com/openai/CLIP.git || echo "Warning: CLIP installation failed, continuing without it"
+        
+    - name: Verify installation
+      run: |
+        echo "Verifying key dependencies..."
+        python -c "import torch; print('✓ PyTorch:', torch.__version__)"
+        python -c "import PIL; print('✓ PIL/Pillow available')"
+        python -c "import geopandas; print('✓ GeoPandas available')"
+        python -c "import numpy; print('✓ NumPy available')"
+        python -c "import shapely; print('✓ Shapely available')"
+        python -c "from transformers import AutoProcessor; print('✓ Transformers available')" || echo "⚠ Transformers not fully available"
+        python -c "import clip; print('✓ CLIP available')" || echo "⚠ CLIP not available (expected in restricted environments)"
+        
+    - name: Create test data directory
+      run: |
+        mkdir -p data
+        mkdir -p data/output
+        
+    - name: Copy test image
+      run: |
+        # Copy the included test image to data directory
+        cp test_data/street_scene.jpg data/test_image.jpg
+        
+    - name: Create test Mapillary token (dummy)
+      run: |
+        echo "dummy_token_for_testing" > mapillary_token
+        
+    - name: Debug environment
+      run: |
+        echo "Python version: $(python --version)"
+        echo "Pip version: $(pip --version)"
+        echo "Working directory: $(pwd)"
+        echo "Directory contents:"
+        ls -la
+        echo "Test data:"
+        ls -la test_data/
+        echo "Checking key packages:"
+        python -c "import sys; print('Python path:', sys.path)" || echo "Python import check failed"
+        python -c "import torch; print('PyTorch version:', torch.__version__)" || echo "PyTorch not available"
+        python -c "from PIL import Image; print('PIL available')" || echo "PIL not available"
+        
+    - name: Run smoke test
+      run: |
+        python smoke_test.py || {
+          echo "Smoke test failed, checking for common issues..."
+          echo "Python version:"
+          python --version
+          echo "Installed packages:"
+          pip list | grep -E "(torch|PIL|geopandas|clip)"
+          echo "Directory contents:"
+          ls -la
+          exit 1
+        }
+        
+    - name: Check outputs
+      run: |
+        ls -la data/output/
+        if [ -f "data/output/surface_classifications.geojson" ]; then
+          echo "✓ Surface classifications generated successfully"
+          head -n 10 data/output/surface_classifications.geojson
+        else
+          echo "⚠ No surface classifications found"
+        fi
+        
+    - name: Upload test artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: smoke-test-results
+        path: |
+          data/output/
+          *.log
+        retention-days: 7
