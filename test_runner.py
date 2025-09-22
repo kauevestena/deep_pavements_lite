@@ -18,6 +18,7 @@ def main():
     parser.add_argument("--lat_max", type=float, required=True, help="Maximum latitude")
     parser.add_argument("--lon_max", type=float, required=True, help="Maximum longitude")
     parser.add_argument("--max_images", type=int, default=1, help="Maximum number of images to process (default: 1)")
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode to save intermediary results")
     args = parser.parse_args()
 
     # Read Mapillary token
@@ -60,7 +61,7 @@ def main():
 
         # Process images using the GDF with metadata
         print("Processing images...")
-        result_gdf = process_images(gdf, data_path)
+        result_gdf = process_images(gdf, data_path, debug_mode=args.debug)
         
         if not result_gdf.empty:
             print(f"Generated surface classifications for {len(result_gdf)} images.")

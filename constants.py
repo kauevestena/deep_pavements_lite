@@ -30,3 +30,7 @@ default_surfaces = [
 
 
 clip_model_path = "deep_pavements_clip_model.pt"
+
+# Debug mode configuration
+DEBUG_MODE = False  # Global debug mode flag
+DEBUG_OUTPUT_DIR = "debug_outputs"  # Directory for debug outputs

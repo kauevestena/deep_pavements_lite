@@ -121,7 +121,7 @@ def main():
     # Process the test image
     print("🔄 Processing test image...")
     try:
-        result_gdf = process_images(test_gdf, data_path)
+        result_gdf = process_images(test_gdf, data_path, debug_mode=False)
         
         if result_gdf.empty:
             print("⚠ No results generated (this may be expected without GPU/models)")
