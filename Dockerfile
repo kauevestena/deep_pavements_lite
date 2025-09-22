@@ -8,7 +8,7 @@ WORKDIR $HOME
 
 # general system dependencies:
 RUN apt-get update && \
-    apt-get install -y git libgl1-mesa-glx libglib2.0-0 wget && \
+    apt-get install -y git libgl1 libgl1-mesa-dri libglib2.0-0 wget && \
     rm -rf /var/lib/apt/lists/*
 
 ENV REPODIR=$HOME/deep_pavements_lite
