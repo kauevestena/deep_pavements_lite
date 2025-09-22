@@ -136,6 +136,8 @@ def process_images(data_path: str) -> None:
                 image, model, preprocess, device, filename
             )
 
+            # TODO: The next step is to pick-up the generated json (better as a python dict, natively) and do the following: if there's at least one detection of road/street, you gonna find the axis of the bbox of this polygon, extending it to the image boundaries(you can use shapely, add it as a requirement)in order to divide the image in two regions: left of street and right of the street; then for each side select the surface label of the biggest polygon, if any. Then a dictionary shall be created with the 3 surface entries: road; left_sidewalk; right_sidewalk. They are gonna be appended in a list created before the iteration part, that will become a geodataframe that shall be the true return of this function, in the CLI version a .geojson. There are special cases: if there are no road, no entry is generated, that picture is therefore forgotten; if there is no sidewalk in one side and no cars, then the value is "no_sidewalk", if there is no sidewalk, but there are cars, a ratio between the sum of the area (in pixels) of the car polygons and the road polygons must be computed, if the cars are less than thrice smaller than the roads (relatively few cars) then the value is "no_sidewalk", otherwise the value shall be "car_hindered" (lots of cars). 
+
         # Save processed image to output directory
         output_filename = filename.replace(ext_in, ext_out)
         output_filepath = os.path.join(output_path, output_filename)
