@@ -139,7 +139,7 @@ def _try_download_finetuned_model():
         print("This may be due to network restrictions or missing dependencies.")
         return False
 
-def process_images(input_gdf: gpd.GeoDataFrame, data_path: str) -> gpd.GeoDataFrame:
+def process_images(input_gdf: gpd.GeoDataFrame, data_path: str, debug_mode: bool = False) -> gpd.GeoDataFrame:
     """
     Process images using metadata from a GeoDataFrame with CLIP and OneFormer models.
     
@@ -157,6 +157,7 @@ def process_images(input_gdf: gpd.GeoDataFrame, data_path: str) -> gpd.GeoDataFr
                                      - 'geometry': Point geometry with GPS coordinates
                                      - Other Mapillary metadata fields
         data_path (str): Path to directory containing input images and output directory.
+        debug_mode (bool): If True, save all intermediary results to debug_outputs folder.
     
     Returns:
         gpd.GeoDataFrame: Results containing surface classifications with columns:
@@ -225,6 +226,24 @@ def process_images(input_gdf: gpd.GeoDataFrame, data_path: str) -> gpd.GeoDataFr
     output_path = os.path.join(data_path, "output")
     os.makedirs(output_path, exist_ok=True)
     print(f"Created output directory: {output_path}")
+    
+    # Create debug output directory if debug mode is enabled
+    debug_path = None
+    debug_images_path = None
+    debug_segmented_path = None
+    debug_metadata_path = None
+    debug_reports_path = None
+    if debug_mode:
+        debug_path = os.path.join(data_path, DEBUG_OUTPUT_DIR)
+        debug_images_path = os.path.join(debug_path, "images")
+        debug_segmented_path = os.path.join(debug_path, "segmented_images")
+        debug_metadata_path = os.path.join(debug_path, "metadata")
+        debug_reports_path = os.path.join(debug_path, "reports")
+        
+        for path in [debug_path, debug_images_path, debug_segmented_path, debug_metadata_path, debug_reports_path]:
+            os.makedirs(path, exist_ok=True)
+        
+        print(f"Debug mode enabled - created debug output directory: {debug_path}")
 
     # Use the input GDF to get images to process
     if input_gdf.empty:
@@ -235,6 +254,9 @@ def process_images(input_gdf: gpd.GeoDataFrame, data_path: str) -> gpd.GeoDataFr
     
     # Initialize list to store results for geodataframe
     surface_results = []
+    
+    # Initialize debug data collection for HTML report
+    debug_data = []
     
     # Process each image with progress bar
     for idx, row in tqdm(input_gdf.iterrows(), total=len(input_gdf), desc="Processing images"):
@@ -260,9 +282,23 @@ def process_images(input_gdf: gpd.GeoDataFrame, data_path: str) -> gpd.GeoDataFr
             with torch.no_grad():
                 image_features = model.encode_image(image_input)
 
+            # Create debug info for this image if debug mode is enabled
+            current_debug_info = None
+            if debug_mode:
+                current_debug_info = {
+                    'debug_path': debug_path,
+                    'debug_images_path': debug_images_path,
+                    'debug_segmented_path': debug_segmented_path,
+                    'debug_metadata_path': debug_metadata_path,
+                    'image_id': image_id,
+                    'filename': filename,
+                    'image_size': image.size,
+                    'coordinates': coordinates
+                }
+
             # Perform semantic segmentation and surface classification
             segmentation_result = segment_image_and_classify_surfaces(
-                image, model, preprocess, device, filename
+                image, model, preprocess, device, filename, current_debug_info
             )
 
             # Process segmentation results to classify road and sidewalk surfaces
@@ -292,6 +328,18 @@ def process_images(input_gdf: gpd.GeoDataFrame, data_path: str) -> gpd.GeoDataFr
                         'geometry': coordinates  # Use actual GPS coordinates from Mapillary
                     }
                     surface_results.append(result_entry)
+                    
+                    # Collect debug data if debug mode is enabled
+                    if debug_mode:
+                        debug_entry = {
+                            'image_id': image_id,
+                            'filename': filename,
+                            'segmentation_result': segmentation_result,
+                            'surface_classification': surface_classification,
+                            'road_axis': road_axis.wkt if road_axis else None,
+                            'coordinates': f"{coordinates.x}, {coordinates.y}" if hasattr(coordinates, 'x') else str(coordinates)
+                        }
+                        debug_data.append(debug_entry)
 
         # Save processed image to output directory
         output_filename = filename.replace(ext_in, ext_out)
@@ -299,8 +347,30 @@ def process_images(input_gdf: gpd.GeoDataFrame, data_path: str) -> gpd.GeoDataFr
         
         # Save the original image (or processed version if desired)
         image.save(output_filepath)
+        
+        # Save debug outputs if debug mode is enabled
+        if debug_mode:
+            # Save original image to debug directory
+            debug_image_path = os.path.join(debug_images_path, filename)
+            image.save(debug_image_path)
+            
+            # Save image metadata
+            metadata = {
+                'image_id': image_id,
+                'filename': filename,
+                'original_size': image.size,
+                'coordinates': f"{coordinates.x}, {coordinates.y}" if hasattr(coordinates, 'x') else str(coordinates),
+                'file_path': image_path
+            }
+            metadata_file = os.path.join(debug_metadata_path, f"{image_id}_metadata.json")
+            with open(metadata_file, 'w') as f:
+                json.dump(metadata, f, indent=2)
 
     print("Image processing complete.")
+    
+    # Generate debug HTML report if debug mode is enabled
+    if debug_mode and debug_data:
+        generate_debug_html_report(debug_data, debug_reports_path)
     
     # Create geodataframe from results
     if surface_results:
@@ -318,7 +388,8 @@ def process_images(input_gdf: gpd.GeoDataFrame, data_path: str) -> gpd.GeoDataFr
 
 
 def segment_image_and_classify_surfaces(image: Image.Image, clip_model, clip_preprocess, 
-                                       device: torch.device, filename: str) -> dict:
+                                       device: torch.device, filename: str, 
+                                       debug_info: dict = None) -> dict:
     """
     Segment image using OneFormer and classify surface types using CLIP.
     
@@ -448,6 +519,26 @@ def segment_image_and_classify_surfaces(image: Image.Image, clip_model, clip_pre
         output_json_path = os.path.join(data_path, "output", output_json_filename)  # Use data_path + output subdir
         with open(output_json_path, 'w') as f:
             json.dump(results, f, indent=2)
+        
+        # Save debug outputs if debug info is provided
+        if debug_info:
+            # Save segmented image with overlay
+            debug_segmented_image = create_segmentation_overlay(image, segmentation_mask, pathway_class_mapping)
+            segmented_filename = f"{debug_info['image_id']}_segmented.png"
+            segmented_path = os.path.join(debug_info['debug_segmented_path'], segmented_filename)
+            debug_segmented_image.save(segmented_path)
+            
+            # Save segmentation mask as numpy array
+            mask_filename = f"{debug_info['image_id']}_mask.npy"
+            mask_path = os.path.join(debug_info['debug_metadata_path'], mask_filename)
+            np.save(mask_path, segmentation_mask)
+            
+            # Save color encoding information
+            color_encoding = get_cityscapes_color_encoding()
+            color_encoding_filename = f"{debug_info['image_id']}_color_encoding.json"
+            color_encoding_path = os.path.join(debug_info['debug_metadata_path'], color_encoding_filename)
+            with open(color_encoding_path, 'w') as f:
+                json.dump(color_encoding, f, indent=2)
         
         print(f"Saved segmentation results to {output_json_path}")
         return results
@@ -849,3 +940,299 @@ def classify_side_surface(sidewalk_polygons: list, car_polygons: list, road_poly
         return 'no_sidewalk'
     else:
         return 'car_hindered'
+
+
+# Debug mode helper functions
+def create_segmentation_overlay(image: Image.Image, segmentation_mask: np.ndarray, 
+                               pathway_class_mapping: dict) -> Image.Image:
+    """
+    Create a visual overlay of the segmentation mask on the original image.
+    
+    Args:
+        image: Original PIL image
+        segmentation_mask: Numpy array with class IDs
+        pathway_class_mapping: Mapping of categories to class IDs
+    
+    Returns:
+        PIL.Image with segmentation overlay
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as patches
+    from PIL import ImageDraw, ImageFont
+    
+    # Create a copy of the original image
+    overlay_image = image.copy().convert("RGBA")
+    draw = ImageDraw.Draw(overlay_image)
+    
+    # Color map for different classes
+    colors = {
+        0: (255, 0, 0, 100),    # roads - red
+        1: (0, 255, 0, 100),    # sidewalks - green 
+        13: (0, 0, 255, 100),   # car - blue
+    }
+    
+    # Create overlay for each class
+    for category_name, class_ids in pathway_class_mapping.items():
+        for class_id in class_ids:
+            if class_id in colors:
+                # Create mask for this class
+                class_mask = (segmentation_mask == class_id)
+                if np.any(class_mask):
+                    # Convert mask to overlay
+                    color = colors[class_id]
+                    mask_array = np.zeros((*segmentation_mask.shape, 4), dtype=np.uint8)
+                    mask_array[class_mask] = color
+                    
+                    # Convert to PIL image and composite
+                    mask_image = Image.fromarray(mask_array, 'RGBA')
+                    mask_image = mask_image.resize(image.size, Image.Resampling.NEAREST)
+                    overlay_image = Image.alpha_composite(overlay_image, mask_image)
+    
+    return overlay_image.convert("RGB")
+
+
+def get_cityscapes_color_encoding() -> dict:
+    """
+    Get the color encoding for Cityscapes classes used in the segmentation.
+    
+    Returns:
+        Dictionary with class information and colors
+    """
+    return {
+        "classes": {
+            "0": {
+                "name": "road",
+                "color": [128, 64, 128],
+                "description": "Road surface including asphalt and concrete roads"
+            },
+            "1": {
+                "name": "sidewalk", 
+                "color": [244, 35, 232],
+                "description": "Sidewalk areas for pedestrian walking"
+            },
+            "13": {
+                "name": "car",
+                "color": [0, 0, 142],
+                "description": "Cars and other vehicles"
+            }
+        },
+        "legend": {
+            "road": "Red overlay in segmentation images",
+            "sidewalk": "Green overlay in segmentation images", 
+            "car": "Blue overlay in segmentation images"
+        }
+    }
+
+
+def generate_debug_html_report(debug_data: list, reports_path: str) -> None:
+    """
+    Generate an HTML report with all debug information.
+    
+    Args:
+        debug_data: List of debug information for each processed image
+        reports_path: Path to save the HTML report
+    """
+    import base64
+    from datetime import datetime
+    
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deep Pavements Lite Debug Report</title>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }}
+        .container {{
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }}
+        .header {{
+            text-align: center;
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }}
+        .image-section {{
+            margin-bottom: 40px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+        }}
+        .image-header {{
+            background-color: #007bff;
+            color: white;
+            padding: 15px;
+            font-size: 18px;
+            font-weight: bold;
+        }}
+        .image-content {{
+            padding: 20px;
+        }}
+        .image-grid {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }}
+        .image-item {{
+            text-align: center;
+        }}
+        .image-item img {{
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }}
+        .image-caption {{
+            margin-top: 10px;
+            font-weight: bold;
+            color: #555;
+        }}
+        .results-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }}
+        .result-card {{
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 15px;
+        }}
+        .result-title {{
+            font-weight: bold;
+            color: #495057;
+            margin-bottom: 10px;
+        }}
+        .result-value {{
+            color: #007bff;
+            font-size: 16px;
+        }}
+        .metadata-table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }}
+        .metadata-table th, .metadata-table td {{
+            border: 1px solid #dee2e6;
+            padding: 8px 12px;
+            text-align: left;
+        }}
+        .metadata-table th {{
+            background-color: #e9ecef;
+            font-weight: bold;
+        }}
+        .summary {{
+            background-color: #e7f3ff;
+            border: 1px solid #b3d7ff;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 30px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛣️ Deep Pavements Lite Debug Report</h1>
+            <p>Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+        </div>
+        
+        <div class="summary">
+            <h2>📊 Processing Summary</h2>
+            <p><strong>Total Images Processed:</strong> {len(debug_data)}</p>
+            <p><strong>Images with Road Detection:</strong> {sum(1 for item in debug_data if item.get('segmentation_result', {}).get('pathway_segments'))}</p>
+        </div>
+"""
+    
+    # Add each image section
+    for idx, item in enumerate(debug_data, 1):
+        filename = item.get('filename', 'unknown')
+        image_id = item.get('image_id', 'unknown')
+        coordinates = item.get('coordinates', 'unknown')
+        
+        # Get segmentation info
+        segmentation_result = item.get('segmentation_result', {})
+        segments = segmentation_result.get('pathway_segments', [])
+        
+        # Get surface classifications
+        surface_classification = item.get('surface_classification', {})
+        road_surface = surface_classification.get('road', 'none')
+        left_sidewalk = surface_classification.get('left_sidewalk', 'none')
+        right_sidewalk = surface_classification.get('right_sidewalk', 'none')
+        
+        html_content += f"""
+        <div class="image-section">
+            <div class="image-header">
+                Image {idx}: {filename} (ID: {image_id})
+            </div>
+            <div class="image-content">
+                <div class="results-grid">
+                    <div class="result-card">
+                        <div class="result-title">🛣️ Road Surface</div>
+                        <div class="result-value">{road_surface}</div>
+                    </div>
+                    <div class="result-card">
+                        <div class="result-title">👈 Left Sidewalk</div>
+                        <div class="result-value">{left_sidewalk}</div>
+                    </div>
+                    <div class="result-card">
+                        <div class="result-title">👉 Right Sidewalk</div>
+                        <div class="result-value">{right_sidewalk}</div>
+                    </div>
+                    <div class="result-card">
+                        <div class="result-title">📍 Coordinates</div>
+                        <div class="result-value">{coordinates}</div>
+                    </div>
+                </div>
+                
+                <table class="metadata-table">
+                    <tr><th>Property</th><th>Value</th></tr>
+                    <tr><td>Image ID</td><td>{image_id}</td></tr>
+                    <tr><td>Filename</td><td>{filename}</td></tr>
+                    <tr><td>Coordinates</td><td>{coordinates}</td></tr>
+                    <tr><td>Segments Detected</td><td>{len(segments)}</td></tr>
+                    <tr><td>Road Axis</td><td>{'Available' if item.get('road_axis') else 'Not detected'}</td></tr>
+                </table>
+                
+                <h4>🔍 Detected Segments</h4>
+                <ul>"""
+        
+        # List all detected segments
+        for segment in segments:
+            category = segment.get('category', 'unknown')
+            surface_type = segment.get('surface_type', {})
+            if isinstance(surface_type, dict):
+                surface_name = surface_type.get('surface', 'unknown')
+                confidence = surface_type.get('confidence', 0)
+                html_content += f"<li><strong>{category.title()}:</strong> {surface_name} (confidence: {confidence:.2f})</li>"
+            else:
+                html_content += f"<li><strong>{category.title()}:</strong> {surface_type}</li>"
+        
+        html_content += """
+                </ul>
+            </div>
+        </div>"""
+    
+    html_content += """
+    </div>
+</body>
+</html>"""
+    
+    # Save the HTML report
+    report_path = os.path.join(reports_path, "debug_report.html")
+    with open(report_path, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+    
+    print(f"Generated debug HTML report: {report_path}")
