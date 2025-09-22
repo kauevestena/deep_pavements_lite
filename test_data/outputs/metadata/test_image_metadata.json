@@ -1,0 +1,10 @@
+{
+  "image_id": "test_image",
+  "filename": "test_image.jpg",
+  "original_size": [
+    2048,
+    1536
+  ],
+  "coordinates": "-122.4194, 37.7749",
+  "file_path": "data/test_image.jpg"
+}
