@@ -51,28 +51,33 @@ from shapely.ops import split
 import geopandas as gpd
 import pandas as pd
 
-def process_images(data_path: str) -> gpd.GeoDataFrame:
+def process_images(input_gdf: gpd.GeoDataFrame, data_path: str) -> gpd.GeoDataFrame:
     """
-    Process images in the specified directory using CLIP and OneFormer models.
+    Process images using metadata from a GeoDataFrame with CLIP and OneFormer models.
     
     This function implements the main image processing pipeline that:
     1. Loads CLIP model (with optional fine-tuned weights for surface classification)
-    2. Processes all JPEG images in the input directory
+    2. Processes images specified in the input GeoDataFrame
     3. Performs semantic segmentation and surface material classification
     4. Analyzes road/sidewalk layout and classifies surfaces on both sides
-    5. Returns structured geodataframe with surface classifications
+    5. Returns structured geodataframe with surface classifications including GPS coordinates
     
     Args:
-        data_path (str): Path to directory containing input images (.jpg files).
-                        Output will be saved to a subdirectory named 'output'.
+        input_gdf (gpd.GeoDataFrame): GeoDataFrame containing image metadata with columns:
+                                     - 'id': Mapillary image ID
+                                     - 'file_path': Path to downloaded image file
+                                     - 'geometry': Point geometry with GPS coordinates
+                                     - Other Mapillary metadata fields
+        data_path (str): Path to directory containing input images and output directory.
     
     Returns:
         gpd.GeoDataFrame: Results containing surface classifications with columns:
             - filename: Original image filename
+            - image_id: Mapillary image ID
             - road: Surface type of the main road
             - left_sidewalk: Surface type of left side (or 'no_sidewalk'/'car_hindered')
             - right_sidewalk: Surface type of right side (or 'no_sidewalk'/'car_hindered')
-            - geometry: Point geometry (placeholder for potential GPS coordinates)
+            - geometry: Point geometry with actual GPS coordinates from Mapillary
     
     Raises:
         Exception: Gracefully handles model loading failures and continues with 
@@ -84,6 +89,7 @@ def process_images(data_path: str) -> gpd.GeoDataFrame:
         - Progress is displayed using tqdm progress bars
         - Creates output directory automatically if it doesn't exist
         - Images without road detections are skipped from results
+        - Uses actual GPS coordinates and image IDs from Mapillary metadata
     """
     # Load CLIP model
     device = torch.device(DEVICE)
@@ -117,22 +123,30 @@ def process_images(data_path: str) -> gpd.GeoDataFrame:
     os.makedirs(output_path, exist_ok=True)
     print(f"Created output directory: {output_path}")
 
-    # Find all JPEG images in the input directory
-    image_files = [f for f in os.listdir(data_path) if f.endswith(ext_in)]
-    
-    if not image_files:
-        print(f"No {ext_in} files found in {data_path}")
+    # Use the input GDF to get images to process
+    if input_gdf.empty:
+        print("No images found in input GeoDataFrame")
         return gpd.GeoDataFrame()  # Return empty geodataframe
     
-    print(f"Found {len(image_files)} images to process")
+    print(f"Found {len(input_gdf)} images to process")
     
     # Initialize list to store results for geodataframe
     surface_results = []
     
     # Process each image with progress bar
-    for filename in tqdm(image_files, desc="Processing images"):
+    for idx, row in tqdm(input_gdf.iterrows(), total=len(input_gdf), desc="Processing images"):
+        # Get image information from the row
+        image_id = row['id']
+        filename = f"{image_id}.jpg"
+        image_path = row['file_path']
+        coordinates = row['geometry']
+        
+        # Check if file exists
+        if not os.path.exists(image_path):
+            print(f"Warning: Image file not found: {image_path}")
+            continue
+            
         # Load image from file
-        image_path = os.path.join(data_path, filename)
         image = Image.open(image_path)
 
         if model_available:
@@ -165,13 +179,14 @@ def process_images(data_path: str) -> gpd.GeoDataFrame:
                         segmentation_result, road_axis, image.size
                     )
                     
-                    # Create result entry
+                    # Create result entry using actual metadata from Mapillary
                     result_entry = {
                         'filename': filename,
+                        'image_id': image_id,
                         'road': surface_classification['road'],
                         'left_sidewalk': surface_classification['left_sidewalk'],
                         'right_sidewalk': surface_classification['right_sidewalk'],
-                        'geometry': Point(0, 0)  # Placeholder geometry - could be populated with GPS coords
+                        'geometry': coordinates  # Use actual GPS coordinates from Mapillary
                     }
                     surface_results.append(result_entry)
 
