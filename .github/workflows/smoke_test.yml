@@ -1,0 +1,84 @@
+name: Smoke Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgl1-mesa-glx libglib2.0-0
+        
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        # Install CPU-only PyTorch for CI (faster and smaller)
+        pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+        # Install other dependencies
+        pip install -r requirements.txt
+        pip install -r my_mappilary_api/requirements.txt
+        pip install git+https://github.com/openai/CLIP.git
+        
+    - name: Create test data directory
+      run: |
+        mkdir -p data
+        mkdir -p data/output
+        
+    - name: Copy test image
+      run: |
+        # Copy the included test image to data directory
+        cp test_data/street_scene.jpg data/test_image.jpg
+        
+    - name: Create test Mapillary token (dummy)
+      run: |
+        echo "dummy_token_for_testing" > mapillary_token
+        
+    - name: Run smoke test
+      run: |
+        python smoke_test.py
+        
+    - name: Check outputs
+      run: |
+        ls -la data/output/
+        if [ -f "data/output/surface_classifications.geojson" ]; then
+          echo "✓ Surface classifications generated successfully"
+          head -n 10 data/output/surface_classifications.geojson
+        else
+          echo "⚠ No surface classifications found"
+        fi
+        
+    - name: Upload test artifacts
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: smoke-test-results
+        path: |
+          data/output/
+          *.log
+        retention-days: 7

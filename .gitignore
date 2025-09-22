@@ -173,3 +173,7 @@ tests.py
 
 # mappillary token:
 mapillary_token
+
+# data directories:
+data/
+!test_data/
