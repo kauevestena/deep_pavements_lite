@@ -44,7 +44,15 @@ def main():
 
         # Process images
         print("Processing images...")
-        process_images(data_path)
+        result_gdf = process_images(data_path)
+        
+        if not result_gdf.empty:
+            print(f"Generated surface classifications for {len(result_gdf)} images.")
+            print("Surface classification summary:")
+            print(result_gdf[['filename', 'road', 'left_sidewalk', 'right_sidewalk']].to_string())
+        else:
+            print("No surface classifications generated.")
+            
         print("Image processing complete.")
     else:
         print("No features found for the given bounding box.")
