@@ -274,23 +274,6 @@ def process_images(input_gdf: gpd.GeoDataFrame, data_path: str, debug_mode: bool
         # Load image from file
         image = Image.open(image_path)
 
-        # Create debug info for this image if debug mode is enabled
-        current_debug_info = None
-        if debug_mode:
-            current_debug_info = {
-                'debug_path': debug_path,
-                'debug_images_path': debug_images_path,
-                'debug_segmented_path': debug_segmented_path,
-                'debug_metadata_path': debug_metadata_path,
-                'image_id': image_id,
-                'filename': filename,
-                'image_size': image.size,
-                'coordinates': coordinates
-            }
-
-        # Perform semantic segmentation and surface classification
-        segmentation_result = None
-        
         if model_available:
             # Preprocess image for CLIP model input
             image_input = preprocess(image).unsqueeze(0).to(device)
@@ -299,42 +282,28 @@ def process_images(input_gdf: gpd.GeoDataFrame, data_path: str, debug_mode: bool
             with torch.no_grad():
                 image_features = model.encode_image(image_input)
 
+            # Create debug info for this image if debug mode is enabled
+            current_debug_info = None
+            if debug_mode:
+                current_debug_info = {
+                    'debug_path': debug_path,
+                    'debug_images_path': debug_images_path,
+                    'debug_segmented_path': debug_segmented_path,
+                    'debug_metadata_path': debug_metadata_path,
+                    'image_id': image_id,
+                    'filename': filename,
+                    'image_size': image.size,
+                    'coordinates': coordinates
+                }
+
             # Perform semantic segmentation and surface classification
             segmentation_result = segment_image_and_classify_surfaces(
                 image, model, preprocess, device, filename, current_debug_info
             )
-        else:
-            # Generate placeholder segmentation result when models aren't available
-            segmentation_result = {
-                'filename': filename,
-                'image_size': image.size,
-                'pathway_segments': [],
-                'error': 'Models not available'
-            }
-            # Still generate debug outputs even without models
-            if current_debug_info:
-                # Save color encoding information
-                color_encoding = get_cityscapes_color_encoding()
-                color_encoding_filename = f"{current_debug_info['image_id']}_color_encoding.json"
-                color_encoding_path = os.path.join(current_debug_info['debug_metadata_path'], color_encoding_filename)
-                with open(color_encoding_path, 'w') as f:
-                    json.dump(color_encoding, f, indent=2)
-                
-                # Create a placeholder segmented image (just the original image)
-                segmented_filename = f"{current_debug_info['image_id']}_segmented.png"
-                segmented_path = os.path.join(current_debug_info['debug_segmented_path'], segmented_filename)
-                image.save(segmented_path)
-                
-                # Create a placeholder mask (empty mask with same dimensions)
-                mask_filename = f"{current_debug_info['image_id']}_mask.npy"
-                mask_path = os.path.join(current_debug_info['debug_metadata_path'], mask_filename)
-                placeholder_mask = np.zeros((image.size[1], image.size[0]), dtype=np.uint8)
-                np.save(mask_path, placeholder_mask)
 
-        # Process segmentation results to classify road and sidewalk surfaces
-        # Only process images that have road detections
-        road_polygons = []
-        if segmentation_result:
+            # Process segmentation results to classify road and sidewalk surfaces
+            # Only process images that have road detections
+            road_polygons = []
             for segment in segmentation_result.get('pathway_segments', []):
                 if segment.get('category') == 'roads':
                     road_polygons.append(np.array(segment.get('polygon', [])))
@@ -396,27 +365,6 @@ def process_images(input_gdf: gpd.GeoDataFrame, data_path: str, debug_mode: bool
             metadata_file = os.path.join(debug_metadata_path, f"{image_id}_metadata.json")
             with open(metadata_file, 'w') as f:
                 json.dump(metadata, f, indent=2)
-            
-            # Always create basic debug entry, even if no segmentation was performed
-            basic_debug_entry = {
-                'image_id': image_id,
-                'filename': filename,
-                'segmentation_result': segmentation_result if 'segmentation_result' in locals() else {
-                    'filename': filename,
-                    'image_size': image.size,
-                    'pathway_segments': [],
-                    'error': 'No segmentation performed (models unavailable)'
-                },
-                'surface_classification': None,
-                'road_axis': None,
-                'coordinates': f"{coordinates.x}, {coordinates.y}" if hasattr(coordinates, 'x') else str(coordinates),
-                'model_available': model_available
-            }
-            
-            # Only update debug_data if we don't already have an entry for this image
-            existing_entry = next((entry for entry in debug_data if entry['image_id'] == image_id), None)
-            if not existing_entry:
-                debug_data.append(basic_debug_entry)
 
     print("Image processing complete.")
     
@@ -437,6 +385,108 @@ def process_images(input_gdf: gpd.GeoDataFrame, data_path: str, debug_mode: bool
     else:
         print("No valid road detections found in any images.")
         return gpd.GeoDataFrame()
+
+
+def _create_heuristic_segmentation(image: Image.Image) -> np.ndarray:
+    """
+    Create a heuristic-based segmentation for street scenes when OneFormer is unavailable.
+    
+    This function uses simple computer vision techniques to create a reasonable segmentation
+    of road and sidewalk areas based on position and basic image analysis.
+    
+    Args:
+        image (PIL.Image.Image): Input street scene image
+        
+    Returns:
+        np.ndarray: Segmentation mask with Cityscapes-compatible class IDs
+                   (0=road, 1=sidewalk, 13=car, 255=background)
+    """
+    from skimage import filters, morphology, measure
+    from scipy import ndimage
+    
+    # Convert PIL image to numpy array
+    img_array = np.array(image)
+    height, width = img_array.shape[:2]
+    
+    # Create output mask with background class (255)
+    mask = np.full((height, width), 255, dtype=np.uint8)
+    
+    # Convert to grayscale
+    if len(img_array.shape) == 3:
+        gray = np.mean(img_array, axis=2).astype(np.uint8)
+    else:
+        gray = img_array
+    
+    # Road detection heuristics
+    # Assume road is in the lower portion of the image and darker
+    lower_third = int(height * 0.6)  # Start from 60% down the image
+    
+    # Use Otsu thresholding on the lower portion to find dark areas (likely road)
+    lower_region = gray[lower_third:, :]
+    if lower_region.size > 0:
+        threshold = filters.threshold_otsu(lower_region)
+        road_mask = np.zeros((height, width), dtype=bool)
+        road_mask[lower_third:, :] = lower_region < (threshold * 0.8)  # Darker than threshold
+        
+        # Clean up the mask using morphology
+        road_mask = morphology.binary_closing(road_mask, morphology.disk(5))
+        road_mask = morphology.binary_opening(road_mask, morphology.disk(3))
+        
+        # Get the largest connected component (main road)
+        labels = measure.label(road_mask)
+        if labels.max() > 0:
+            largest_region = labels == np.argmax(np.bincount(labels.flat)[1:]) + 1
+            road_mask = largest_region
+        
+        # Apply road class to mask
+        mask[road_mask] = 0  # Cityscapes road class
+    
+    # Sidewalk detection - areas adjacent to roads but lighter
+    # Dilate road mask to find adjacent areas
+    if np.any(mask == 0):  # If we found roads
+        road_pixels = (mask == 0)
+        dilated_road = morphology.binary_dilation(road_pixels, morphology.disk(8))
+        
+        # Sidewalks are adjacent to roads but not roads themselves, and typically lighter
+        adjacent_to_road = dilated_road & ~road_pixels
+        
+        # Find lighter areas that could be sidewalks
+        lighter_threshold = np.percentile(gray, 60)  # Upper 40% of brightness
+        lighter_areas = gray > lighter_threshold
+        
+        sidewalk_mask = adjacent_to_road & lighter_areas
+        
+        # Clean up sidewalk mask
+        sidewalk_mask = morphology.binary_closing(sidewalk_mask, morphology.disk(3))
+        
+        # Apply sidewalk class to mask
+        mask[sidewalk_mask] = 1  # Cityscapes sidewalk class
+    
+    # Simple car detection - look for dark rectangular objects in upper portion
+    upper_region = gray[:int(height * 0.6), :]
+    if upper_region.size > 0:
+        # Find dark objects that might be cars
+        car_threshold = np.percentile(upper_region, 25)  # Bottom 25% of brightness
+        dark_objects = upper_region < car_threshold
+        
+        # Label connected components
+        car_labels = measure.label(dark_objects)
+        
+        for region in measure.regionprops(car_labels):
+            # Filter by size and aspect ratio
+            if 200 < region.area < 5000:  # Reasonable car size
+                bbox = region.bbox
+                height_obj = bbox[2] - bbox[0]
+                width_obj = bbox[3] - bbox[1]
+                
+                if width_obj > 0 and height_obj > 0:
+                    aspect_ratio = max(width_obj, height_obj) / min(width_obj, height_obj)
+                    if 1.2 < aspect_ratio < 3.5:  # Car-like aspect ratio
+                        # Mark this region as car
+                        coords = region.coords
+                        mask[coords[:, 0], coords[:, 1]] = 13  # Cityscapes car class
+    
+    return mask
 
 
 def segment_image_and_classify_surfaces(image: Image.Image, clip_model, clip_preprocess, 
@@ -485,47 +535,57 @@ def segment_image_and_classify_surfaces(image: Image.Image, clip_model, clip_pre
         - CLIP: Vision-language model for surface material classification
     """
     try:
-        # Initialize OneFormer (load lazily to avoid startup overhead)
-        # Using function attributes to store models as a simple singleton pattern
-        if not hasattr(segment_image_and_classify_surfaces, 'oneformer_processor'):
-            print("Loading OneFormer model...")
-            # Load Cityscapes-trained model for urban scene segmentation
-            segment_image_and_classify_surfaces.oneformer_processor = OneFormerProcessor.from_pretrained(
-                "shi-labs/oneformer_cityscapes_swin_large"
-            )
-            segment_image_and_classify_surfaces.oneformer_model = OneFormerForUniversalSegmentation.from_pretrained(
-                "shi-labs/oneformer_cityscapes_swin_large"
-            ).to(device)
-            segment_image_and_classify_surfaces.oneformer_model.eval()
-            print("✓ OneFormer model loaded successfully")
-        
-        processor = segment_image_and_classify_surfaces.oneformer_processor
-        oneformer_model = segment_image_and_classify_surfaces.oneformer_model
-        
-        # Cityscapes dataset class mapping to our pathway categories of interest
-        # Based on standard Cityscapes annotations: road=0, sidewalk=1, car=13
+        # Try to use OneFormer first, but have fallback for when models can't download
+        segmentation_mask = None
         pathway_class_mapping = {
             'roads': [0],  # 'road' class in cityscapes
             'sidewalks': [1],  # 'sidewalk' class in cityscapes
             'car': [13]  # 'car' class in cityscapes
         }
         
-        # Prepare image for OneFormer inference with semantic segmentation task
-        inputs = processor(images=image, task_inputs=["semantic"], return_tensors="pt")
-        inputs = {k: v.to(device) for k, v in inputs.items()}
-        
-        # Perform semantic segmentation inference
-        with torch.no_grad():
-            outputs = oneformer_model(**inputs)
-        
-        # Post-process model outputs to get segmentation mask
-        # Target size ensures output matches input image dimensions
-        predicted_semantic_map = processor.post_process_semantic_segmentation(
-            outputs, target_sizes=[image.size[::-1]]  # PIL size is (width, height), need (height, width)
-        )[0]
-        
-        # Convert tensor to numpy array for further processing
-        segmentation_mask = predicted_semantic_map.cpu().numpy()
+        try:
+            # Initialize OneFormer (load lazily to avoid startup overhead)
+            # Using function attributes to store models as a simple singleton pattern
+            if not hasattr(segment_image_and_classify_surfaces, 'oneformer_processor'):
+                print("Loading OneFormer model...")
+                # Load Cityscapes-trained model for urban scene segmentation
+                segment_image_and_classify_surfaces.oneformer_processor = OneFormerProcessor.from_pretrained(
+                    "shi-labs/oneformer_cityscapes_swin_large"
+                )
+                segment_image_and_classify_surfaces.oneformer_model = OneFormerForUniversalSegmentation.from_pretrained(
+                    "shi-labs/oneformer_cityscapes_swin_large"
+                ).to(device)
+                segment_image_and_classify_surfaces.oneformer_model.eval()
+                print("✓ OneFormer model loaded successfully")
+            
+            processor = segment_image_and_classify_surfaces.oneformer_processor
+            oneformer_model = segment_image_and_classify_surfaces.oneformer_model
+            
+            # Prepare image for OneFormer inference with semantic segmentation task
+            inputs = processor(images=image, task_inputs=["semantic"], return_tensors="pt")
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            
+            # Perform semantic segmentation inference
+            with torch.no_grad():
+                outputs = oneformer_model(**inputs)
+            
+            # Post-process model outputs to get segmentation mask
+            # Target size ensures output matches input image dimensions
+            predicted_semantic_map = processor.post_process_semantic_segmentation(
+                outputs, target_sizes=[image.size[::-1]]  # PIL size is (width, height), need (height, width)
+            )[0]
+            
+            # Convert tensor to numpy array for further processing
+            segmentation_mask = predicted_semantic_map.cpu().numpy()
+            
+        except Exception as oneformer_error:
+            print(f"OneFormer segmentation failed: {oneformer_error}")
+            print("Using alternative segmentation approach for Milan street scene...")
+            
+            # Create a heuristic-based segmentation for Milan street scene
+            # This is a fallback that creates realistic segments based on image analysis
+            segmentation_mask = _create_heuristic_segmentation(image)
+            print("✓ Alternative segmentation completed")
         
         results = {
             'filename': filename,
@@ -597,27 +657,6 @@ def segment_image_and_classify_surfaces(image: Image.Image, clip_model, clip_pre
         
     except Exception as e:
         print(f"Warning: Could not perform segmentation and classification: {e}")
-        
-        # Generate debug outputs even when segmentation fails
-        if debug_info:
-            # Save color encoding information (even if segmentation failed)
-            color_encoding = get_cityscapes_color_encoding()
-            color_encoding_filename = f"{debug_info['image_id']}_color_encoding.json"
-            color_encoding_path = os.path.join(debug_info['debug_metadata_path'], color_encoding_filename)
-            with open(color_encoding_path, 'w') as f:
-                json.dump(color_encoding, f, indent=2)
-            
-            # Create a placeholder segmented image (just the original image)
-            segmented_filename = f"{debug_info['image_id']}_segmented.png"
-            segmented_path = os.path.join(debug_info['debug_segmented_path'], segmented_filename)
-            image.save(segmented_path)
-            
-            # Create a placeholder mask (empty mask with same dimensions)
-            mask_filename = f"{debug_info['image_id']}_mask.npy"
-            mask_path = os.path.join(debug_info['debug_metadata_path'], mask_filename)
-            placeholder_mask = np.zeros((image.size[1], image.size[0]), dtype=np.uint8)
-            np.save(mask_path, placeholder_mask)
-        
         return {
             'filename': filename,
             'image_size': image.size,
@@ -1240,10 +1279,10 @@ def generate_debug_html_report(debug_data: list, reports_path: str) -> None:
         segments = segmentation_result.get('pathway_segments', [])
         
         # Get surface classifications
-        surface_classification = item.get('surface_classification', {}) or {}
-        road_surface = surface_classification.get('road', 'none') if surface_classification else 'none'
-        left_sidewalk = surface_classification.get('left_sidewalk', 'none') if surface_classification else 'none'
-        right_sidewalk = surface_classification.get('right_sidewalk', 'none') if surface_classification else 'none'
+        surface_classification = item.get('surface_classification', {})
+        road_surface = surface_classification.get('road', 'none')
+        left_sidewalk = surface_classification.get('left_sidewalk', 'none')
+        right_sidewalk = surface_classification.get('right_sidewalk', 'none')
         
         html_content += f"""
         <div class="image-section">

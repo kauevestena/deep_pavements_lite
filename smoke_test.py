@@ -79,10 +79,11 @@ def create_test_geodataframe():
             import shutil
             shutil.copy2(source_path, test_image_path)
     
+    # Create proper metadata for Milan test image
     test_data = {
-        'id': ['test_image'],
+        'id': ['milan_street_scene'],
         'file_path': [test_image_path],
-        'geometry': [Point(-122.4194, 37.7749)]  # San Francisco coordinates
+        'geometry': [Point(9.1900, 45.4642)]  # Milan, Italy coordinates
     }
     
     gdf = gpd.GeoDataFrame(test_data, crs='EPSG:4326')
