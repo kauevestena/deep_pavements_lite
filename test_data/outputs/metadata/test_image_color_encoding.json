@@ -1,0 +1,36 @@
+{
+  "classes": {
+    "0": {
+      "name": "road",
+      "color": [
+        128,
+        64,
+        128
+      ],
+      "description": "Road surface including asphalt and concrete roads"
+    },
+    "1": {
+      "name": "sidewalk",
+      "color": [
+        244,
+        35,
+        232
+      ],
+      "description": "Sidewalk areas for pedestrian walking"
+    },
+    "13": {
+      "name": "car",
+      "color": [
+        0,
+        0,
+        142
+      ],
+      "description": "Cars and other vehicles"
+    }
+  },
+  "legend": {
+    "road": "Red overlay in segmentation images",
+    "sidewalk": "Green overlay in segmentation images",
+    "car": "Blue overlay in segmentation images"
+  }
+}

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deep Pavements Lite Debug Report</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        .image-section {
+            margin-bottom: 40px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .image-header {
+            background-color: #007bff;
+            color: white;
+            padding: 15px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .image-content {
+            padding: 20px;
+        }
+        .image-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .image-item {
+            text-align: center;
+        }
+        .image-item img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .image-caption {
+            margin-top: 10px;
+            font-weight: bold;
+            color: #555;
+        }
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .result-card {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 15px;
+        }
+        .result-title {
+            font-weight: bold;
+            color: #495057;
+            margin-bottom: 10px;
+        }
+        .result-value {
+            color: #007bff;
+            font-size: 16px;
+        }
+        .metadata-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        .metadata-table th, .metadata-table td {
+            border: 1px solid #dee2e6;
+            padding: 8px 12px;
+            text-align: left;
+        }
+        .metadata-table th {
+            background-color: #e9ecef;
+            font-weight: bold;
+        }
+        .summary {
+            background-color: #e7f3ff;
+            border: 1px solid #b3d7ff;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 30px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛣️ Deep Pavements Lite Debug Report</h1>
+            <p>Generated on 2025-09-22 23:31:37</p>
+        </div>
+        
+        <div class="summary">
+            <h2>📊 Processing Summary</h2>
+            <p><strong>Total Images Processed:</strong> 1</p>
+            <p><strong>Images with Road Detection:</strong> 0</p>
+        </div>
+
+        <div class="image-section">
+            <div class="image-header">
+                Image 1: test_image.jpg (ID: test_image)
+            </div>
+            <div class="image-content">
+                <div class="results-grid">
+                    <div class="result-card">
+                        <div class="result-title">🛣️ Road Surface</div>
+                        <div class="result-value">none</div>
+                    </div>
+                    <div class="result-card">
+                        <div class="result-title">👈 Left Sidewalk</div>
+                        <div class="result-value">none</div>
+                    </div>
+                    <div class="result-card">
+                        <div class="result-title">👉 Right Sidewalk</div>
+                        <div class="result-value">none</div>
+                    </div>
+                    <div class="result-card">
+                        <div class="result-title">📍 Coordinates</div>
+                        <div class="result-value">-122.4194, 37.7749</div>
+                    </div>
+                </div>
+                
+                <table class="metadata-table">
+                    <tr><th>Property</th><th>Value</th></tr>
+                    <tr><td>Image ID</td><td>test_image</td></tr>
+                    <tr><td>Filename</td><td>test_image.jpg</td></tr>
+                    <tr><td>Coordinates</td><td>-122.4194, 37.7749</td></tr>
+                    <tr><td>Segments Detected</td><td>0</td></tr>
+                    <tr><td>Road Axis</td><td>Not detected</td></tr>
+                </table>
+                
+                <h4>🔍 Detected Segments</h4>
+                <ul>
+                </ul>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

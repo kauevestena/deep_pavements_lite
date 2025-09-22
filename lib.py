@@ -274,6 +274,23 @@ def process_images(input_gdf: gpd.GeoDataFrame, data_path: str, debug_mode: bool
         # Load image from file
         image = Image.open(image_path)
 
+        # Create debug info for this image if debug mode is enabled
+        current_debug_info = None
+        if debug_mode:
+            current_debug_info = {
+                'debug_path': debug_path,
+                'debug_images_path': debug_images_path,
+                'debug_segmented_path': debug_segmented_path,
+                'debug_metadata_path': debug_metadata_path,
+                'image_id': image_id,
+                'filename': filename,
+                'image_size': image.size,
+                'coordinates': coordinates
+            }
+
+        # Perform semantic segmentation and surface classification
+        segmentation_result = None
+        
         if model_available:
             # Preprocess image for CLIP model input
             image_input = preprocess(image).unsqueeze(0).to(device)
@@ -282,28 +299,42 @@ def process_images(input_gdf: gpd.GeoDataFrame, data_path: str, debug_mode: bool
             with torch.no_grad():
                 image_features = model.encode_image(image_input)
 
-            # Create debug info for this image if debug mode is enabled
-            current_debug_info = None
-            if debug_mode:
-                current_debug_info = {
-                    'debug_path': debug_path,
-                    'debug_images_path': debug_images_path,
-                    'debug_segmented_path': debug_segmented_path,
-                    'debug_metadata_path': debug_metadata_path,
-                    'image_id': image_id,
-                    'filename': filename,
-                    'image_size': image.size,
-                    'coordinates': coordinates
-                }
-
             # Perform semantic segmentation and surface classification
             segmentation_result = segment_image_and_classify_surfaces(
                 image, model, preprocess, device, filename, current_debug_info
             )
+        else:
+            # Generate placeholder segmentation result when models aren't available
+            segmentation_result = {
+                'filename': filename,
+                'image_size': image.size,
+                'pathway_segments': [],
+                'error': 'Models not available'
+            }
+            # Still generate debug outputs even without models
+            if current_debug_info:
+                # Save color encoding information
+                color_encoding = get_cityscapes_color_encoding()
+                color_encoding_filename = f"{current_debug_info['image_id']}_color_encoding.json"
+                color_encoding_path = os.path.join(current_debug_info['debug_metadata_path'], color_encoding_filename)
+                with open(color_encoding_path, 'w') as f:
+                    json.dump(color_encoding, f, indent=2)
+                
+                # Create a placeholder segmented image (just the original image)
+                segmented_filename = f"{current_debug_info['image_id']}_segmented.png"
+                segmented_path = os.path.join(current_debug_info['debug_segmented_path'], segmented_filename)
+                image.save(segmented_path)
+                
+                # Create a placeholder mask (empty mask with same dimensions)
+                mask_filename = f"{current_debug_info['image_id']}_mask.npy"
+                mask_path = os.path.join(current_debug_info['debug_metadata_path'], mask_filename)
+                placeholder_mask = np.zeros((image.size[1], image.size[0]), dtype=np.uint8)
+                np.save(mask_path, placeholder_mask)
 
-            # Process segmentation results to classify road and sidewalk surfaces
-            # Only process images that have road detections
-            road_polygons = []
+        # Process segmentation results to classify road and sidewalk surfaces
+        # Only process images that have road detections
+        road_polygons = []
+        if segmentation_result:
             for segment in segmentation_result.get('pathway_segments', []):
                 if segment.get('category') == 'roads':
                     road_polygons.append(np.array(segment.get('polygon', [])))
@@ -365,6 +396,27 @@ def process_images(input_gdf: gpd.GeoDataFrame, data_path: str, debug_mode: bool
             metadata_file = os.path.join(debug_metadata_path, f"{image_id}_metadata.json")
             with open(metadata_file, 'w') as f:
                 json.dump(metadata, f, indent=2)
+            
+            # Always create basic debug entry, even if no segmentation was performed
+            basic_debug_entry = {
+                'image_id': image_id,
+                'filename': filename,
+                'segmentation_result': segmentation_result if 'segmentation_result' in locals() else {
+                    'filename': filename,
+                    'image_size': image.size,
+                    'pathway_segments': [],
+                    'error': 'No segmentation performed (models unavailable)'
+                },
+                'surface_classification': None,
+                'road_axis': None,
+                'coordinates': f"{coordinates.x}, {coordinates.y}" if hasattr(coordinates, 'x') else str(coordinates),
+                'model_available': model_available
+            }
+            
+            # Only update debug_data if we don't already have an entry for this image
+            existing_entry = next((entry for entry in debug_data if entry['image_id'] == image_id), None)
+            if not existing_entry:
+                debug_data.append(basic_debug_entry)
 
     print("Image processing complete.")
     
@@ -545,6 +597,27 @@ def segment_image_and_classify_surfaces(image: Image.Image, clip_model, clip_pre
         
     except Exception as e:
         print(f"Warning: Could not perform segmentation and classification: {e}")
+        
+        # Generate debug outputs even when segmentation fails
+        if debug_info:
+            # Save color encoding information (even if segmentation failed)
+            color_encoding = get_cityscapes_color_encoding()
+            color_encoding_filename = f"{debug_info['image_id']}_color_encoding.json"
+            color_encoding_path = os.path.join(debug_info['debug_metadata_path'], color_encoding_filename)
+            with open(color_encoding_path, 'w') as f:
+                json.dump(color_encoding, f, indent=2)
+            
+            # Create a placeholder segmented image (just the original image)
+            segmented_filename = f"{debug_info['image_id']}_segmented.png"
+            segmented_path = os.path.join(debug_info['debug_segmented_path'], segmented_filename)
+            image.save(segmented_path)
+            
+            # Create a placeholder mask (empty mask with same dimensions)
+            mask_filename = f"{debug_info['image_id']}_mask.npy"
+            mask_path = os.path.join(debug_info['debug_metadata_path'], mask_filename)
+            placeholder_mask = np.zeros((image.size[1], image.size[0]), dtype=np.uint8)
+            np.save(mask_path, placeholder_mask)
+        
         return {
             'filename': filename,
             'image_size': image.size,
@@ -1167,10 +1240,10 @@ def generate_debug_html_report(debug_data: list, reports_path: str) -> None:
         segments = segmentation_result.get('pathway_segments', [])
         
         # Get surface classifications
-        surface_classification = item.get('surface_classification', {})
-        road_surface = surface_classification.get('road', 'none')
-        left_sidewalk = surface_classification.get('left_sidewalk', 'none')
-        right_sidewalk = surface_classification.get('right_sidewalk', 'none')
+        surface_classification = item.get('surface_classification', {}) or {}
+        road_surface = surface_classification.get('road', 'none') if surface_classification else 'none'
+        left_sidewalk = surface_classification.get('left_sidewalk', 'none') if surface_classification else 'none'
+        right_sidewalk = surface_classification.get('right_sidewalk', 'none') if surface_classification else 'none'
         
         html_content += f"""
         <div class="image-section">
