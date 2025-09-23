@@ -161,8 +161,9 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# weights:
-deep_pavements_clip_model.pt
+# weights and model files:
+*.pt
+*.pt.*
 
 # core files (if they happen to appear!)
 core.*
@@ -178,6 +179,9 @@ mapillary_token
 data/
 !test_data/
 
+# cache directories:
+cache/
+
 # Test artifacts and outputs
 test_data/outputs/
-test_debug_outputs.py
+test_debug_outputs.pycache/

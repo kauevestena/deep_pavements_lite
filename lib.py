@@ -111,6 +111,7 @@ def _try_download_finetuned_model():
     Returns:
         bool: True if download was successful, False otherwise
     """
+    # First try HuggingFace Hub download
     try:
         from huggingface_hub import hf_hub_download
         import shutil
@@ -135,9 +136,34 @@ def _try_download_finetuned_model():
             return False
             
     except Exception as e:
-        print(f"Unable to download fine-tuned model: {e}")
-        print("This may be due to network restrictions or missing dependencies.")
-        return False
+        print(f"Unable to download fine-tuned model via HuggingFace Hub: {e}")
+        print("Trying direct download fallback...")
+        
+        # Fallback to direct download from HuggingFace
+        try:
+            import requests
+            
+            direct_url = "https://huggingface.co/kauevestena/clip-vit-base-patch32-finetuned-surface-materials/resolve/main/model.pt"
+            print(f"Downloading from direct URL: {direct_url}")
+            
+            response = requests.get(direct_url, stream=True)
+            response.raise_for_status()
+            
+            with open(clip_model_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            
+            if os.path.exists(clip_model_path):
+                file_size = os.path.getsize(clip_model_path) / (1024*1024)
+                print(f"✓ Fine-tuned model downloaded successfully via direct URL ({file_size:.1f} MB)")
+                return True
+            else:
+                return False
+                
+        except Exception as direct_e:
+            print(f"Direct download also failed: {direct_e}")
+            print("This may be due to network restrictions or missing dependencies.")
+            return False
 
 def process_images(input_gdf: gpd.GeoDataFrame, data_path: str, debug_mode: bool = False) -> gpd.GeoDataFrame:
     """
@@ -192,15 +218,33 @@ def process_images(input_gdf: gpd.GeoDataFrame, data_path: str, debug_mode: bool
         # Fine-tuned models typically perform better on domain-specific tasks
         if os.path.exists(clip_model_path):
             print(f"Loading fine-tuned model from {clip_model_path}")
-            model.load_state_dict(torch.load(clip_model_path, map_location=device))
-            print("✓ Fine-tuned CLIP model loaded successfully")
+            try:
+                checkpoint = torch.load(clip_model_path, map_location=device)
+                # Check if this is a checkpoint with metadata or just state dict
+                if 'model_state_dict' in checkpoint:
+                    model.load_state_dict(checkpoint['model_state_dict'])
+                else:
+                    model.load_state_dict(checkpoint)
+                print("✓ Fine-tuned CLIP model loaded successfully")
+            except Exception as load_e:
+                print(f"Failed to load fine-tuned model: {load_e}")
+                print("Using default CLIP model")
         else:
             print(f"Fine-tuned model {clip_model_path} not found")
             # Try to download the fine-tuned model
             if _try_download_finetuned_model():
                 print(f"Loading downloaded fine-tuned model from {clip_model_path}")
-                model.load_state_dict(torch.load(clip_model_path, map_location=device))
-                print("✓ Fine-tuned CLIP model downloaded and loaded successfully")
+                try:
+                    checkpoint = torch.load(clip_model_path, map_location=device)
+                    # Check if this is a checkpoint with metadata or just state dict
+                    if 'model_state_dict' in checkpoint:
+                        model.load_state_dict(checkpoint['model_state_dict'])
+                    else:
+                        model.load_state_dict(checkpoint)
+                    print("✓ Fine-tuned CLIP model downloaded and loaded successfully")
+                except Exception as load_e:
+                    print(f"Failed to load downloaded model: {load_e}")
+                    print("Using default CLIP model")
             else:
                 print("Using default CLIP model")
         
