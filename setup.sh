@@ -5,6 +5,19 @@
 
 echo "🚀 Setting up deep_pavements_lite..."
 
+# Create test data directory structure
+echo "📁 Setting up test data directories..."
+mkdir -p data
+mkdir -p data/output
+
+# Copy test image if available
+if [ -f "test_data/street_scene.jpg" ]; then
+    cp test_data/street_scene.jpg data/test_image.jpg
+    echo "✓ Test image copied to data directory"
+else
+    echo "⚠ Test image not found, creating minimal test environment"
+fi
+
 # Check if fine-tuned model already exists
 if [ -f "deep_pavements_clip_model.pt" ]; then
     echo "✓ Fine-tuned CLIP model already exists"
