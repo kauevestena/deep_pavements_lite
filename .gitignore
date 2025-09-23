@@ -180,4 +180,4 @@ data/
 
 # Test artifacts and outputs
 test_data/outputs/
-test_debug_outputs.py
+test_debug_outputs.pycache/
