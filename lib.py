@@ -387,6 +387,108 @@ def process_images(input_gdf: gpd.GeoDataFrame, data_path: str, debug_mode: bool
         return gpd.GeoDataFrame()
 
 
+def _create_heuristic_segmentation(image: Image.Image) -> np.ndarray:
+    """
+    Create a heuristic-based segmentation for street scenes when OneFormer is unavailable.
+    
+    This function uses simple computer vision techniques to create a reasonable segmentation
+    of road and sidewalk areas based on position and basic image analysis.
+    
+    Args:
+        image (PIL.Image.Image): Input street scene image
+        
+    Returns:
+        np.ndarray: Segmentation mask with Cityscapes-compatible class IDs
+                   (0=road, 1=sidewalk, 13=car, 255=background)
+    """
+    from skimage import filters, morphology, measure
+    from scipy import ndimage
+    
+    # Convert PIL image to numpy array
+    img_array = np.array(image)
+    height, width = img_array.shape[:2]
+    
+    # Create output mask with background class (255)
+    mask = np.full((height, width), 255, dtype=np.uint8)
+    
+    # Convert to grayscale
+    if len(img_array.shape) == 3:
+        gray = np.mean(img_array, axis=2).astype(np.uint8)
+    else:
+        gray = img_array
+    
+    # Road detection heuristics
+    # Assume road is in the lower portion of the image and darker
+    lower_third = int(height * 0.6)  # Start from 60% down the image
+    
+    # Use Otsu thresholding on the lower portion to find dark areas (likely road)
+    lower_region = gray[lower_third:, :]
+    if lower_region.size > 0:
+        threshold = filters.threshold_otsu(lower_region)
+        road_mask = np.zeros((height, width), dtype=bool)
+        road_mask[lower_third:, :] = lower_region < (threshold * 0.8)  # Darker than threshold
+        
+        # Clean up the mask using morphology
+        road_mask = morphology.binary_closing(road_mask, morphology.disk(5))
+        road_mask = morphology.binary_opening(road_mask, morphology.disk(3))
+        
+        # Get the largest connected component (main road)
+        labels = measure.label(road_mask)
+        if labels.max() > 0:
+            largest_region = labels == np.argmax(np.bincount(labels.flat)[1:]) + 1
+            road_mask = largest_region
+        
+        # Apply road class to mask
+        mask[road_mask] = 0  # Cityscapes road class
+    
+    # Sidewalk detection - areas adjacent to roads but lighter
+    # Dilate road mask to find adjacent areas
+    if np.any(mask == 0):  # If we found roads
+        road_pixels = (mask == 0)
+        dilated_road = morphology.binary_dilation(road_pixels, morphology.disk(8))
+        
+        # Sidewalks are adjacent to roads but not roads themselves, and typically lighter
+        adjacent_to_road = dilated_road & ~road_pixels
+        
+        # Find lighter areas that could be sidewalks
+        lighter_threshold = np.percentile(gray, 60)  # Upper 40% of brightness
+        lighter_areas = gray > lighter_threshold
+        
+        sidewalk_mask = adjacent_to_road & lighter_areas
+        
+        # Clean up sidewalk mask
+        sidewalk_mask = morphology.binary_closing(sidewalk_mask, morphology.disk(3))
+        
+        # Apply sidewalk class to mask
+        mask[sidewalk_mask] = 1  # Cityscapes sidewalk class
+    
+    # Simple car detection - look for dark rectangular objects in upper portion
+    upper_region = gray[:int(height * 0.6), :]
+    if upper_region.size > 0:
+        # Find dark objects that might be cars
+        car_threshold = np.percentile(upper_region, 25)  # Bottom 25% of brightness
+        dark_objects = upper_region < car_threshold
+        
+        # Label connected components
+        car_labels = measure.label(dark_objects)
+        
+        for region in measure.regionprops(car_labels):
+            # Filter by size and aspect ratio
+            if 200 < region.area < 5000:  # Reasonable car size
+                bbox = region.bbox
+                height_obj = bbox[2] - bbox[0]
+                width_obj = bbox[3] - bbox[1]
+                
+                if width_obj > 0 and height_obj > 0:
+                    aspect_ratio = max(width_obj, height_obj) / min(width_obj, height_obj)
+                    if 1.2 < aspect_ratio < 3.5:  # Car-like aspect ratio
+                        # Mark this region as car
+                        coords = region.coords
+                        mask[coords[:, 0], coords[:, 1]] = 13  # Cityscapes car class
+    
+    return mask
+
+
 def segment_image_and_classify_surfaces(image: Image.Image, clip_model, clip_preprocess, 
                                        device: torch.device, filename: str, 
                                        debug_info: dict = None) -> dict:
@@ -433,52 +535,101 @@ def segment_image_and_classify_surfaces(image: Image.Image, clip_model, clip_pre
         - CLIP: Vision-language model for surface material classification
     """
     try:
-        # Initialize OneFormer (load lazily to avoid startup overhead)
-        # Using function attributes to store models as a simple singleton pattern
-        if not hasattr(segment_image_and_classify_surfaces, 'oneformer_processor'):
-            print("Loading OneFormer model...")
-            # Load Cityscapes-trained model for urban scene segmentation
-            segment_image_and_classify_surfaces.oneformer_processor = OneFormerProcessor.from_pretrained(
-                "shi-labs/oneformer_cityscapes_swin_large"
-            )
-            segment_image_and_classify_surfaces.oneformer_model = OneFormerForUniversalSegmentation.from_pretrained(
-                "shi-labs/oneformer_cityscapes_swin_large"
-            ).to(device)
-            segment_image_and_classify_surfaces.oneformer_model.eval()
-            print("✓ OneFormer model loaded successfully")
-        
-        processor = segment_image_and_classify_surfaces.oneformer_processor
-        oneformer_model = segment_image_and_classify_surfaces.oneformer_model
-        
-        # Cityscapes dataset class mapping to our pathway categories of interest
-        # Based on standard Cityscapes annotations: road=0, sidewalk=1, car=13
+        # Try to use OneFormer first, but have fallback for when models can't download
+        segmentation_mask = None
+        segmentation_method = "unknown"  # Track which method was used
         pathway_class_mapping = {
             'roads': [0],  # 'road' class in cityscapes
             'sidewalks': [1],  # 'sidewalk' class in cityscapes
             'car': [13]  # 'car' class in cityscapes
         }
         
-        # Prepare image for OneFormer inference with semantic segmentation task
-        inputs = processor(images=image, task_inputs=["semantic"], return_tensors="pt")
-        inputs = {k: v.to(device) for k, v in inputs.items()}
-        
-        # Perform semantic segmentation inference
-        with torch.no_grad():
-            outputs = oneformer_model(**inputs)
-        
-        # Post-process model outputs to get segmentation mask
-        # Target size ensures output matches input image dimensions
-        predicted_semantic_map = processor.post_process_semantic_segmentation(
-            outputs, target_sizes=[image.size[::-1]]  # PIL size is (width, height), need (height, width)
-        )[0]
-        
-        # Convert tensor to numpy array for further processing
-        segmentation_mask = predicted_semantic_map.cpu().numpy()
+        try:
+            # Initialize OneFormer (load lazily to avoid startup overhead)
+            # Using function attributes to store models as a simple singleton pattern
+            if not hasattr(segment_image_and_classify_surfaces, 'oneformer_processor'):
+                print("Loading OneFormer model...")
+                # Load Cityscapes-trained model for urban scene segmentation
+                segment_image_and_classify_surfaces.oneformer_processor = OneFormerProcessor.from_pretrained(
+                    "shi-labs/oneformer_cityscapes_swin_large"
+                )
+                segment_image_and_classify_surfaces.oneformer_model = OneFormerForUniversalSegmentation.from_pretrained(
+                    "shi-labs/oneformer_cityscapes_swin_large"
+                ).to(device)
+                segment_image_and_classify_surfaces.oneformer_model.eval()
+                print("✓ OneFormer model loaded successfully")
+            
+            processor = segment_image_and_classify_surfaces.oneformer_processor
+            oneformer_model = segment_image_and_classify_surfaces.oneformer_model
+            
+            # Try full resolution first
+            try:
+                # Prepare image for OneFormer inference with semantic segmentation task
+                inputs = processor(images=image, task_inputs=["semantic"], return_tensors="pt")
+                inputs = {k: v.to(device) for k, v in inputs.items()}
+                
+                # Perform semantic segmentation inference
+                with torch.no_grad():
+                    outputs = oneformer_model(**inputs)
+                
+                # Post-process model outputs to get segmentation mask
+                # Target size ensures output matches input image dimensions
+                predicted_semantic_map = processor.post_process_semantic_segmentation(
+                    outputs, target_sizes=[image.size[::-1]]  # PIL size is (width, height), need (height, width)
+                )[0]
+                
+                # Convert tensor to numpy array for further processing
+                segmentation_mask = predicted_semantic_map.cpu().numpy()
+                segmentation_method = "OneFormer (full resolution)"
+                print("✓ OneFormer segmentation completed at full resolution")
+                
+            except RuntimeError as memory_error:
+                if "out of memory" in str(memory_error).lower() or "cuda" in str(memory_error).lower():
+                    print(f"OneFormer failed due to memory constraints: {memory_error}")
+                    print("Trying OneFormer with half resolution...")
+                    
+                    # Resize image to half resolution
+                    half_size = (image.size[0] // 2, image.size[1] // 2)
+                    resized_image = image.resize(half_size, Image.Resampling.LANCZOS)
+                    
+                    # Prepare resized image for OneFormer inference
+                    inputs = processor(images=resized_image, task_inputs=["semantic"], return_tensors="pt")
+                    inputs = {k: v.to(device) for k, v in inputs.items()}
+                    
+                    # Perform semantic segmentation inference on smaller image
+                    with torch.no_grad():
+                        outputs = oneformer_model(**inputs)
+                    
+                    # Post-process model outputs to get segmentation mask
+                    predicted_semantic_map = processor.post_process_semantic_segmentation(
+                        outputs, target_sizes=[resized_image.size[::-1]]
+                    )[0]
+                    
+                    # Convert to numpy and resize back to original size
+                    small_mask = predicted_semantic_map.cpu().numpy()
+                    segmentation_mask = np.array(Image.fromarray(small_mask.astype(np.uint8)).resize(
+                        image.size, Image.Resampling.NEAREST))
+                    
+                    segmentation_method = "OneFormer (half resolution)"
+                    print("✓ OneFormer segmentation completed at half resolution")
+                else:
+                    raise memory_error  # Re-raise if it's not a memory error
+            
+        except Exception as oneformer_error:
+            print(f"OneFormer segmentation failed: {oneformer_error}")
+            print("Using alternative segmentation approach for Milan street scene...")
+            
+            # Create a heuristic-based segmentation for Milan street scene
+            # This is a fallback that creates realistic segments based on image analysis
+            segmentation_mask = _create_heuristic_segmentation(image)
+            segmentation_method = "Heuristic fallback"
+            print("✓ Alternative segmentation completed")
         
         results = {
             'filename': filename,
             'image_size': image.size,
-            'pathway_segments': []
+            'pathway_segments': [],
+            'segmentation_method': segmentation_method  # Add segmentation method used
         }
         
         # Process each pathway category (roads, sidewalks, car) defined in constants
@@ -1204,6 +1355,7 @@ def generate_debug_html_report(debug_data: list, reports_path: str) -> None:
                     <tr><td>Coordinates</td><td>{coordinates}</td></tr>
                     <tr><td>Segments Detected</td><td>{len(segments)}</td></tr>
                     <tr><td>Road Axis</td><td>{'Available' if item.get('road_axis') else 'Not detected'}</td></tr>
+                    <tr><td>Segmentation Method</td><td>{segmentation_result.get('segmentation_method', 'Unknown')}</td></tr>
                 </table>
                 
                 <h4>🔍 Detected Segments</h4>
