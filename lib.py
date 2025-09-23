@@ -537,6 +537,7 @@ def segment_image_and_classify_surfaces(image: Image.Image, clip_model, clip_pre
     try:
         # Try to use OneFormer first, but have fallback for when models can't download
         segmentation_mask = None
+        segmentation_method = "unknown"  # Track which method was used
         pathway_class_mapping = {
             'roads': [0],  # 'road' class in cityscapes
             'sidewalks': [1],  # 'sidewalk' class in cityscapes
@@ -561,22 +562,58 @@ def segment_image_and_classify_surfaces(image: Image.Image, clip_model, clip_pre
             processor = segment_image_and_classify_surfaces.oneformer_processor
             oneformer_model = segment_image_and_classify_surfaces.oneformer_model
             
-            # Prepare image for OneFormer inference with semantic segmentation task
-            inputs = processor(images=image, task_inputs=["semantic"], return_tensors="pt")
-            inputs = {k: v.to(device) for k, v in inputs.items()}
-            
-            # Perform semantic segmentation inference
-            with torch.no_grad():
-                outputs = oneformer_model(**inputs)
-            
-            # Post-process model outputs to get segmentation mask
-            # Target size ensures output matches input image dimensions
-            predicted_semantic_map = processor.post_process_semantic_segmentation(
-                outputs, target_sizes=[image.size[::-1]]  # PIL size is (width, height), need (height, width)
-            )[0]
-            
-            # Convert tensor to numpy array for further processing
-            segmentation_mask = predicted_semantic_map.cpu().numpy()
+            # Try full resolution first
+            try:
+                # Prepare image for OneFormer inference with semantic segmentation task
+                inputs = processor(images=image, task_inputs=["semantic"], return_tensors="pt")
+                inputs = {k: v.to(device) for k, v in inputs.items()}
+                
+                # Perform semantic segmentation inference
+                with torch.no_grad():
+                    outputs = oneformer_model(**inputs)
+                
+                # Post-process model outputs to get segmentation mask
+                # Target size ensures output matches input image dimensions
+                predicted_semantic_map = processor.post_process_semantic_segmentation(
+                    outputs, target_sizes=[image.size[::-1]]  # PIL size is (width, height), need (height, width)
+                )[0]
+                
+                # Convert tensor to numpy array for further processing
+                segmentation_mask = predicted_semantic_map.cpu().numpy()
+                segmentation_method = "OneFormer (full resolution)"
+                print("✓ OneFormer segmentation completed at full resolution")
+                
+            except RuntimeError as memory_error:
+                if "out of memory" in str(memory_error).lower() or "cuda" in str(memory_error).lower():
+                    print(f"OneFormer failed due to memory constraints: {memory_error}")
+                    print("Trying OneFormer with half resolution...")
+                    
+                    # Resize image to half resolution
+                    half_size = (image.size[0] // 2, image.size[1] // 2)
+                    resized_image = image.resize(half_size, Image.Resampling.LANCZOS)
+                    
+                    # Prepare resized image for OneFormer inference
+                    inputs = processor(images=resized_image, task_inputs=["semantic"], return_tensors="pt")
+                    inputs = {k: v.to(device) for k, v in inputs.items()}
+                    
+                    # Perform semantic segmentation inference on smaller image
+                    with torch.no_grad():
+                        outputs = oneformer_model(**inputs)
+                    
+                    # Post-process model outputs to get segmentation mask
+                    predicted_semantic_map = processor.post_process_semantic_segmentation(
+                        outputs, target_sizes=[resized_image.size[::-1]]
+                    )[0]
+                    
+                    # Convert to numpy and resize back to original size
+                    small_mask = predicted_semantic_map.cpu().numpy()
+                    segmentation_mask = np.array(Image.fromarray(small_mask.astype(np.uint8)).resize(
+                        image.size, Image.Resampling.NEAREST))
+                    
+                    segmentation_method = "OneFormer (half resolution)"
+                    print("✓ OneFormer segmentation completed at half resolution")
+                else:
+                    raise memory_error  # Re-raise if it's not a memory error
             
         except Exception as oneformer_error:
             print(f"OneFormer segmentation failed: {oneformer_error}")
@@ -585,12 +622,14 @@ def segment_image_and_classify_surfaces(image: Image.Image, clip_model, clip_pre
             # Create a heuristic-based segmentation for Milan street scene
             # This is a fallback that creates realistic segments based on image analysis
             segmentation_mask = _create_heuristic_segmentation(image)
+            segmentation_method = "Heuristic fallback"
             print("✓ Alternative segmentation completed")
         
         results = {
             'filename': filename,
             'image_size': image.size,
-            'pathway_segments': []
+            'pathway_segments': [],
+            'segmentation_method': segmentation_method  # Add segmentation method used
         }
         
         # Process each pathway category (roads, sidewalks, car) defined in constants
@@ -1316,6 +1355,7 @@ def generate_debug_html_report(debug_data: list, reports_path: str) -> None:
                     <tr><td>Coordinates</td><td>{coordinates}</td></tr>
                     <tr><td>Segments Detected</td><td>{len(segments)}</td></tr>
                     <tr><td>Road Axis</td><td>{'Available' if item.get('road_axis') else 'Not detected'}</td></tr>
+                    <tr><td>Segmentation Method</td><td>{segmentation_result.get('segmentation_method', 'Unknown')}</td></tr>
                 </table>
                 
                 <h4>🔍 Detected Segments</h4>
