@@ -33,8 +33,20 @@ echo "YOUR_MAPILLARY_TOKEN" > mapillary_token
 
 4) Run the application:
 ```bash
-python runner.py --lat_min <min_latitude> --lon_min <min_longitude> --lat_max <max_latitude> --lon_max <max_longitude>
+python runner.py \
+    --lat_min <min_latitude> \
+    --lon_min <min_longitude> \
+    --lat_max <max_latitude> \
+    --lon_max <max_longitude> \
+    [--max_images <count>] \
+    [--half_res | --quarter_res] \
+    [--debug]
 ```
+
+### Optional CLI flags
+
+- `--max_images`: Randomly sample up to the specified number of images from the retrieved metadata before downloading. Useful when you only need a subset.
+- `--half_res` / `--quarter_res`: Downscale downloaded Mapillary images to 50% or 25% of the original resolution, reducing storage and speeding up processing. Omit both flags to keep the original size.
 
 # Docker Setup
 
@@ -64,7 +76,10 @@ To skip the precaching of weights, add `--build-arg TO_PRECACHE=false`
             --lat_min <min_latitude> \
             --lon_min <min_longitude> \
             --lat_max <max_latitude> \
-            --lon_max <max_longitude>
+            --lon_max <max_longitude> \
+            [--max_images <count>] \
+            [--half_res | --quarter_res] \
+            [--debug]
 
 (Or If you wanna use it inside VSCode, as a dev container, you can use the "devcontainer.json" at the .devcontainer folder, but don't forget to create the folder and the token file!)
 
