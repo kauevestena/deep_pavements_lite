@@ -5,6 +5,7 @@ from my_mappilary_api.mapillary_api import (
     mapillary_data_to_gdf,
     download_all_pictures_from_gdf,
 )
+from constants import data_path as DEFAULT_DATA_PATH
 from lib import *
 
 def main():
@@ -19,6 +20,12 @@ def main():
         type=int,
         default=None,
         help="Maximum number of images to randomly sample for processing",
+    )
+    parser.add_argument(
+        "-o",
+        "--output_dir",
+        default=DEFAULT_DATA_PATH,
+        help="Directory to store downloaded images and generated outputs",
     )
     resolution_group = parser.add_mutually_exclusive_group()
     resolution_group.add_argument(
@@ -37,6 +44,7 @@ def main():
         parser.error("--max_images must be a positive integer")
 
     scale_factor = 0.5 if args.half_res else 0.25 if args.quarter_res else 1.0
+    output_dir = os.path.abspath(args.output_dir)
 
     # Read Mapillary token
     token_files = ["mapillary_token", "workspace/data/mapillary_token", "data/mapillary_token"]
@@ -75,15 +83,15 @@ def main():
         # Download images and get GDF with file paths
         print("Downloading images...")
         # Ensure data directory exists before saving any images
-        os.makedirs(data_path, exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
         # Add file paths to the GDF
-        gdf['file_path'] = gdf['id'].apply(lambda x: os.path.join(data_path, f"{x}.jpg"))
-        download_all_pictures_from_gdf(gdf, data_path, scale_factor=scale_factor)
+        gdf['file_path'] = gdf['id'].apply(lambda x: os.path.join(output_dir, f"{x}.jpg"))
+        download_all_pictures_from_gdf(gdf, output_dir, scale_factor=scale_factor)
         print("Image download complete.")
 
         # Process images using the GDF with metadata
         print("Processing images...")
-        result_gdf = process_images(gdf, data_path, debug_mode=args.debug)
+        result_gdf = process_images(gdf, output_dir, debug_mode=args.debug)
         
         if not result_gdf.empty:
             print(f"Generated surface classifications for {len(result_gdf)} images.")
