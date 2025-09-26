@@ -26,8 +26,12 @@ pip install -r my_mappilary_api/requirements.txt
 pip install git+https://github.com/openai/CLIP.git
 ```
 
-3) Create a Mapillary token file:
+3) Supply your Mapillary token (choose one):
 ```bash
+# Pass the token directly when running the CLI
+python runner.py ... --mapillary_token "YOUR_MAPILLARY_TOKEN"
+
+# Or place the token in a file that runner.py can read
 echo "YOUR_MAPILLARY_TOKEN" > mapillary_token
 ```
 
@@ -38,6 +42,7 @@ python runner.py \
     --lon_min <min_longitude> \
     --lat_max <max_latitude> \
     --lon_max <max_longitude> \
+    [--mapillary_token "<token>"] \
     [--max_images <count>] \
     [--half_res | --quarter_res] \
     [--debug]
@@ -45,6 +50,7 @@ python runner.py \
 
 ### Optional CLI flags
 
+- `--mapillary_token`: Provide a Mapillary access token via the command line instead of relying on token files.
 - `--max_images`: Randomly sample up to the specified number of images from the retrieved metadata before downloading. Useful when you only need a subset.
 - `--half_res` / `--quarter_res`: Downscale downloaded Mapillary images to 50% or 25% of the original resolution, reducing storage and speeding up processing. Omit both flags to keep the original size.
 
@@ -77,10 +83,11 @@ To skip the precaching of weights, add `--build-arg TO_PRECACHE=false`
             --lon_min <min_longitude> \
             --lat_max <max_latitude> \
             --lon_max <max_longitude> \
+            [--mapillary_token "<token>"] \
             [--max_images <count>] \
             [--half_res | --quarter_res] \
             [--debug]
 
 (Or If you wanna use it inside VSCode, as a dev container, you can use the "devcontainer.json" at the .devcontainer folder, but don't forget to create the folder and the token file!)
 
-Inside the container you can create a file called "workspace/data/mapillary_token" and put your token there. Or simply on repo root, both are accepted.
+Inside the container you can create a file called "workspace/data/mapillary_token" and put your token there, store it at the repo root, or pass `--mapillary_token` directly.
