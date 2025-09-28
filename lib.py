@@ -375,13 +375,27 @@ def process_images(input_gdf: gpd.GeoDataFrame, data_path: str, debug_mode: bool
                     
                     # Collect debug data if debug mode is enabled
                     if debug_mode:
+                        # Extract road axis as LineString object for HTML report
+                        road_axis_line = None
+                        if road_axis:
+                            try:
+                                from shapely.geometry import LineString
+                                road_axis_line = road_axis
+                            except:
+                                pass
+                        
                         debug_entry = {
                             'image_id': image_id,
                             'filename': filename,
+                            'image': image,  # Include original image for HTML report
                             'segmentation_result': segmentation_result,
                             'surface_classification': surface_classification,
                             'road_axis': road_axis.wkt if road_axis else None,
-                            'coordinates': f"{coordinates.x}, {coordinates.y}" if hasattr(coordinates, 'x') else str(coordinates)
+                            'road_axis_line': road_axis_line,  # Include LineString object for HTML report
+                            'coordinates': f"{coordinates.x}, {coordinates.y}" if hasattr(coordinates, 'x') else str(coordinates),
+                            # Add segmentation data from current_debug_info if available
+                            'segmentation_mask': current_debug_info.get('segmentation_mask') if 'current_debug_info' in locals() else None,
+                            'pathway_class_mapping': current_debug_info.get('pathway_class_mapping') if 'current_debug_info' in locals() else None
                         }
                         debug_data.append(debug_entry)
 
@@ -734,6 +748,13 @@ def segment_image_and_classify_surfaces(image: Image.Image, clip_model, clip_pre
             color_encoding_path = os.path.join(debug_info['debug_metadata_path'], color_encoding_filename)
             with open(color_encoding_path, 'w') as f:
                 json.dump(color_encoding, f, indent=2)
+        
+        # Add segmentation method and mask info to results for debug purposes
+        results['segmentation_method'] = segmentation_method
+        if debug_info:
+            # Store the mask in debug_info for HTML report generation
+            debug_info['segmentation_mask'] = segmentation_mask
+            debug_info['pathway_class_mapping'] = pathway_class_mapping
         
         print(f"Saved segmentation results to {output_json_path}")
         return results
@@ -1186,6 +1207,149 @@ def create_segmentation_overlay(image: Image.Image, segmentation_mask: np.ndarra
     return overlay_image.convert("RGB")
 
 
+def create_enhanced_segmentation_overlay(image: Image.Image, segmentation_mask: np.ndarray,
+                                       pathway_class_mapping: dict, surface_classification: dict = None,
+                                       road_axis_line=None) -> Image.Image:
+    """
+    Create an enhanced visual overlay with text labels and road axis highlighting.
+    
+    Args:
+        image: Original PIL image
+        segmentation_mask: Numpy array with class IDs
+        pathway_class_mapping: Mapping of categories to class IDs
+        surface_classification: Dict with surface classifications (road, left_sidewalk, right_sidewalk)
+        road_axis_line: Shapely LineString representing the road axis
+    
+    Returns:
+        PIL.Image with enhanced segmentation overlay
+    """
+    import cv2
+    from PIL import ImageDraw, ImageFont
+    
+    # Start with the basic overlay
+    overlay_image = create_segmentation_overlay(image, segmentation_mask, pathway_class_mapping)
+    
+    # Convert to OpenCV format for text drawing
+    cv_image = cv2.cvtColor(np.array(overlay_image), cv2.COLOR_RGB2BGR)
+    
+    # Define colors for OpenCV (BGR format)
+    colors_cv2 = {
+        0: (0, 0, 255),    # roads - red
+        1: (0, 255, 0),    # sidewalks - green 
+        13: (255, 0, 0),   # car - blue
+    }
+    
+    # Class names mapping
+    class_names = {
+        0: 'road',
+        1: 'sidewalk',
+        13: 'car'
+    }
+    
+    # Add text labels to segmented areas
+    for category_name, class_ids in pathway_class_mapping.items():
+        for class_id in class_ids:
+            if class_id in colors_cv2:
+                # Find the centroid of this class for text placement
+                class_mask = (segmentation_mask == class_id)
+                if np.any(class_mask):
+                    # Find contours for this class
+                    mask_uint8 = (class_mask * 255).astype(np.uint8)
+                    contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    
+                    # For each significant contour, add a label
+                    for contour in contours:
+                        if cv2.contourArea(contour) > 1000:  # Only label significant areas
+                            # Calculate centroid
+                            M = cv2.moments(contour)
+                            if M["m00"] != 0:
+                                cx = int(M["m10"] / M["m00"])
+                                cy = int(M["m01"] / M["m00"])
+                                
+                                # Prepare label text
+                                class_name = class_names.get(class_id, 'unknown')
+                                surface_type = ''
+                                if surface_classification and class_name in ['road', 'left_sidewalk', 'right_sidewalk']:
+                                    surface_key = class_name if class_name == 'road' else class_name.replace('_', ' ')
+                                    surface_type = surface_classification.get(class_name, '')
+                                    if surface_type and surface_type != 'none':
+                                        surface_type = f"\n({surface_type})"
+                                
+                                label_text = f"{class_name.title()}{surface_type}"
+                                
+                                # Add text with background for better visibility
+                                font = cv2.FONT_HERSHEY_SIMPLEX
+                                font_scale = 0.7
+                                thickness = 2
+                                
+                                # Get text size for background rectangle
+                                lines = label_text.split('\n')
+                                max_width = 0
+                                total_height = 0
+                                line_height = 25
+                                
+                                for line in lines:
+                                    (text_width, text_height), _ = cv2.getTextSize(line, font, font_scale, thickness)
+                                    max_width = max(max_width, text_width)
+                                    total_height += line_height
+                                
+                                # Draw background rectangle
+                                padding = 5
+                                cv2.rectangle(cv_image, 
+                                            (cx - max_width//2 - padding, cy - total_height//2 - padding),
+                                            (cx + max_width//2 + padding, cy + total_height//2 + padding),
+                                            (255, 255, 255), -1)
+                                
+                                # Draw text lines
+                                y_offset = cy - total_height//2 + line_height//2
+                                for line in lines:
+                                    if line.strip():  # Only draw non-empty lines
+                                        (text_width, _), _ = cv2.getTextSize(line, font, font_scale, thickness)
+                                        cv2.putText(cv_image, line, 
+                                                  (cx - text_width//2, y_offset),
+                                                  font, font_scale, (0, 0, 0), thickness)
+                                        y_offset += line_height
+    
+    # Draw road axis if available
+    if road_axis_line is not None:
+        try:
+            # Get road axis coordinates
+            coords = list(road_axis_line.coords)
+            if len(coords) >= 2:
+                pt1 = (int(coords[0][0]), int(coords[0][1]))
+                pt2 = (int(coords[1][0]), int(coords[1][1]))
+                
+                # Draw road axis line in bright color
+                cv2.line(cv_image, pt1, pt2, (255, 255, 0), 3)  # Yellow line
+                
+                # Add axis label
+                mid_x = (pt1[0] + pt2[0]) // 2
+                mid_y = (pt1[1] + pt2[1]) // 2
+                
+                # Add background for text
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 0.6
+                thickness = 2
+                text = "Road Axis"
+                (text_width, text_height), _ = cv2.getTextSize(text, font, font_scale, thickness)
+                
+                cv2.rectangle(cv_image, 
+                            (mid_x - text_width//2 - 3, mid_y - text_height - 5),
+                            (mid_x + text_width//2 + 3, mid_y + 5),
+                            (255, 255, 0), -1)
+                
+                cv2.putText(cv_image, text, 
+                          (mid_x - text_width//2, mid_y),
+                          font, font_scale, (0, 0, 0), thickness)
+                          
+        except Exception as e:
+            print(f"Warning: Could not draw road axis: {e}")
+    
+    # Convert back to PIL
+    enhanced_image = Image.fromarray(cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB))
+    return enhanced_image
+
+
 def get_cityscapes_color_encoding() -> dict:
     """
     Get the color encoding for Cityscapes classes used in the segmentation.
@@ -1219,9 +1383,50 @@ def get_cityscapes_color_encoding() -> dict:
     }
 
 
+def image_to_base64(image: Image.Image, format: str = 'JPEG', quality: int = 85) -> str:
+    """
+    Convert PIL Image to base64 string for HTML embedding.
+    
+    Args:
+        image: PIL Image to convert
+        format: Image format ('JPEG', 'PNG', etc.)
+        quality: JPEG quality (1-100, only used for JPEG)
+    
+    Returns:
+        Base64 encoded string suitable for HTML data URIs
+    """
+    import base64
+    from io import BytesIO
+    
+    # Create a BytesIO buffer
+    buffer = BytesIO()
+    
+    # Save image to buffer
+    if format.upper() == 'JPEG':
+        # Convert RGBA to RGB for JPEG
+        if image.mode in ('RGBA', 'LA', 'P'):
+            rgb_image = Image.new('RGB', image.size, (255, 255, 255))
+            if image.mode == 'P':
+                image = image.convert('RGBA')
+            rgb_image.paste(image, mask=image.split()[-1] if image.mode in ('RGBA', 'LA') else None)
+            image = rgb_image
+        image.save(buffer, format=format, quality=quality)
+    else:
+        image.save(buffer, format=format)
+    
+    # Get base64 string
+    buffer.seek(0)
+    img_str = base64.b64encode(buffer.getvalue()).decode()
+    
+    # Create data URI
+    mime_type = f"image/{format.lower()}"
+    return f"data:{mime_type};base64,{img_str}"
+
+
 def generate_debug_html_report(debug_data: list, reports_path: str) -> None:
     """
-    Generate an HTML report with all debug information.
+    Generate an enhanced HTML report with all debug information, including thumbnails 
+    and semantic segmentation overlays embedded as base64 images.
     
     Args:
         debug_data: List of debug information for each processed image
@@ -1229,6 +1434,7 @@ def generate_debug_html_report(debug_data: list, reports_path: str) -> None:
     """
     import base64
     from datetime import datetime
+    from shapely.geometry import LineString
     
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
@@ -1243,7 +1449,7 @@ def generate_debug_html_report(debug_data: list, reports_path: str) -> None:
             background-color: #f5f5f5;
         }}
         .container {{
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             background-color: white;
             padding: 20px;
@@ -1281,17 +1487,31 @@ def generate_debug_html_report(debug_data: list, reports_path: str) -> None:
         }}
         .image-item {{
             text-align: center;
+            position: relative;
         }}
         .image-item img {{
             max-width: 100%;
             height: auto;
             border: 1px solid #ddd;
             border-radius: 4px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }}
+        .image-item img:hover {{
+            transform: scale(1.05);
         }}
         .image-caption {{
             margin-top: 10px;
             font-weight: bold;
             color: #555;
+            font-size: 14px;
+        }}
+        .thumbnail {{
+            max-height: 200px;
+            object-fit: cover;
+        }}
+        .full-size {{
+            max-height: 400px;
         }}
         .results-grid {{
             display: grid;
@@ -1335,7 +1555,116 @@ def generate_debug_html_report(debug_data: list, reports_path: str) -> None:
             padding: 15px;
             margin-bottom: 30px;
         }}
+        .legend {{
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }}
+        .legend-item {{
+            display: inline-flex;
+            align-items: center;
+            margin-right: 20px;
+            margin-bottom: 5px;
+        }}
+        .legend-color {{
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+            margin-right: 8px;
+            border: 1px solid #ccc;
+        }}
+        .expandable-section {{
+            margin-top: 20px;
+        }}
+        .section-toggle {{
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }}
+        .section-toggle:hover {{
+            background-color: #0056b3;
+        }}
+        .section-content {{
+            display: none;
+        }}
+        .section-content.expanded {{
+            display: block;
+        }}
+        /* Modal styles for full-size images */
+        .modal {{
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.9);
+        }}
+        .modal-content {{
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            max-width: 90%;
+            max-height: 90%;
+        }}
+        .modal img {{
+            width: 100%;
+            height: auto;
+        }}
+        .close {{
+            position: absolute;
+            top: 15px;
+            right: 35px;
+            color: #f1f1f1;
+            font-size: 40px;
+            font-weight: bold;
+            cursor: pointer;
+        }}
+        .close:hover {{
+            color: white;
+        }}
     </style>
+    <script>
+        function toggleSection(id) {{
+            const content = document.getElementById(id);
+            const button = content.previousElementSibling;
+            if (content.classList.contains('expanded')) {{
+                content.classList.remove('expanded');
+                button.textContent = button.textContent.replace('▼', '▶');
+            }} else {{
+                content.classList.add('expanded');
+                button.textContent = button.textContent.replace('▶', '▼');
+            }}
+        }}
+        
+        function showModal(src) {{
+            const modal = document.getElementById('imageModal');
+            const modalImg = document.getElementById('modalImage');
+            modal.style.display = 'block';
+            modalImg.src = src;
+        }}
+        
+        function closeModal() {{
+            document.getElementById('imageModal').style.display = 'none';
+        }}
+        
+        window.onclick = function(event) {{
+            const modal = document.getElementById('imageModal');
+            if (event.target == modal) {{
+                closeModal();
+            }}
+        }}
+    </script>
 </head>
 <body>
     <div class="container">
@@ -1349,9 +1678,40 @@ def generate_debug_html_report(debug_data: list, reports_path: str) -> None:
             <p><strong>Total Images Processed:</strong> {len(debug_data)}</p>
             <p><strong>Images with Road Detection:</strong> {sum(1 for item in debug_data if item.get('segmentation_result', {}).get('pathway_segments'))}</p>
         </div>
+        
+        <div class="legend">
+            <h3>🎨 Segmentation Legend</h3>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: rgba(255, 0, 0, 0.4);"></div>
+                <span><strong>Road</strong> - Red overlay</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: rgba(0, 255, 0, 0.4);"></div>
+                <span><strong>Sidewalk</strong> - Green overlay</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: rgba(0, 0, 255, 0.4);"></div>
+                <span><strong>Car</strong> - Blue overlay</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: rgba(255, 255, 0, 1);"></div>
+                <span><strong>Road Axis</strong> - Yellow line</span>
+            </div>
+        </div>
 """
     
-    # Add each image section
+    # Add modal for full-size images
+    html_content += """
+        <!-- Modal for full-size images -->
+        <div id="imageModal" class="modal">
+            <span class="close">&times;</span>
+            <div class="modal-content">
+                <img id="modalImage" src="">
+            </div>
+        </div>
+    """
+    
+    # Process each image and create enhanced content
     for idx, item in enumerate(debug_data, 1):
         filename = item.get('filename', 'unknown')
         image_id = item.get('image_id', 'unknown')
@@ -1366,6 +1726,49 @@ def generate_debug_html_report(debug_data: list, reports_path: str) -> None:
         road_surface = surface_classification.get('road', 'none')
         left_sidewalk = surface_classification.get('left_sidewalk', 'none')
         right_sidewalk = surface_classification.get('right_sidewalk', 'none')
+        
+        # Generate image embeddings
+        original_image_b64 = ""
+        segmentation_image_b64 = ""
+        enhanced_segmentation_b64 = ""
+        
+        try:
+            # Get original image
+            original_image = item.get('image')
+            if original_image:
+                # Create thumbnail (max 400px width)
+                thumbnail = original_image.copy()
+                thumbnail.thumbnail((400, 300), Image.Resampling.LANCZOS)
+                original_image_b64 = image_to_base64(thumbnail, 'JPEG', 85)
+            
+            # Create segmentation overlay if mask is available
+            segmentation_mask = item.get('segmentation_mask')
+            if original_image and segmentation_mask is not None:
+                # Define pathway class mapping (standard for the system)
+                pathway_class_mapping = {{
+                    'road': [0],
+                    'sidewalk': [1], 
+                    'car': [13]
+                }}
+                
+                # Create basic segmentation overlay
+                basic_overlay = create_segmentation_overlay(original_image, segmentation_mask, pathway_class_mapping)
+                basic_thumbnail = basic_overlay.copy()
+                basic_thumbnail.thumbnail((400, 300), Image.Resampling.LANCZOS)
+                segmentation_image_b64 = image_to_base64(basic_thumbnail, 'JPEG', 85)
+                
+                # Create enhanced segmentation overlay with labels and road axis
+                road_axis = item.get('road_axis_line')
+                enhanced_overlay = create_enhanced_segmentation_overlay(
+                    original_image, segmentation_mask, pathway_class_mapping, 
+                    surface_classification, road_axis
+                )
+                enhanced_thumbnail = enhanced_overlay.copy()
+                enhanced_thumbnail.thumbnail((400, 300), Image.Resampling.LANCZOS)
+                enhanced_segmentation_b64 = image_to_base64(enhanced_thumbnail, 'JPEG', 85)
+                
+        except Exception as e:
+            print(f"Warning: Could not process images for {filename}: {e}")
         
         html_content += f"""
         <div class="image-section">
@@ -1392,6 +1795,38 @@ def generate_debug_html_report(debug_data: list, reports_path: str) -> None:
                     </div>
                 </div>
                 
+        """
+        
+        # Add image grid if we have images
+        if original_image_b64 or segmentation_image_b64 or enhanced_segmentation_b64:
+            html_content += '<div class="image-grid">'
+            
+            if original_image_b64:
+                html_content += f"""
+                    <div class="image-item">
+                        <img src="{original_image_b64}" alt="Original Image" class="thumbnail" onclick="showModal('{original_image_b64}')">
+                        <div class="image-caption">📷 Original Image</div>
+                    </div>
+                """
+            
+            if enhanced_segmentation_b64:
+                html_content += f"""
+                    <div class="image-item">
+                        <img src="{enhanced_segmentation_b64}" alt="Enhanced Segmentation" class="thumbnail" onclick="showModal('{enhanced_segmentation_b64}')">
+                        <div class="image-caption">🎯 Enhanced Segmentation<br><small>(with labels & road axis)</small></div>
+                    </div>
+                """
+            elif segmentation_image_b64:
+                html_content += f"""
+                    <div class="image-item">
+                        <img src="{segmentation_image_b64}" alt="Segmentation Overlay" class="thumbnail" onclick="showModal('{segmentation_image_b64}')">
+                        <div class="image-caption">🔍 Segmentation Overlay</div>
+                    </div>
+                """
+            
+            html_content += '</div>'
+        
+        html_content += f"""
                 <table class="metadata-table">
                     <tr><th>Property</th><th>Value</th></tr>
                     <tr><td>Image ID</td><td>{image_id}</td></tr>
@@ -1402,8 +1837,11 @@ def generate_debug_html_report(debug_data: list, reports_path: str) -> None:
                     <tr><td>Segmentation Method</td><td>{segmentation_result.get('segmentation_method', 'Unknown')}</td></tr>
                 </table>
                 
-                <h4>🔍 Detected Segments</h4>
-                <ul>"""
+                <div class="expandable-section">
+                    <button class="section-toggle" onclick="toggleSection('segments-{idx}')">▶ 🔍 Detailed Segment Analysis</button>
+                    <div id="segments-{idx}" class="section-content">
+                        <h4>Detected Segments</h4>
+                        <ul>"""
         
         # List all detected segments
         for segment in segments:
@@ -1417,12 +1855,18 @@ def generate_debug_html_report(debug_data: list, reports_path: str) -> None:
                 html_content += f"<li><strong>{category.title()}:</strong> {surface_type}</li>"
         
         html_content += """
-                </ul>
+                        </ul>
+                    </div>
+                </div>
             </div>
         </div>"""
     
     html_content += """
     </div>
+    <script>
+        // Close modal when clicking the close button
+        document.querySelector('.close').onclick = closeModal;
+    </script>
 </body>
 </html>"""
     
@@ -1431,4 +1875,7 @@ def generate_debug_html_report(debug_data: list, reports_path: str) -> None:
     with open(report_path, 'w', encoding='utf-8') as f:
         f.write(html_content)
     
-    print(f"Generated debug HTML report: {report_path}")
+    print(f"Generated enhanced debug HTML report: {report_path}")
+    print(f"  - Included {len([item for item in debug_data if item.get('image')])} image thumbnails")
+    print(f"  - Included {len([item for item in debug_data if item.get('segmentation_mask') is not None])} segmentation overlays")
+    print(f"  - Report is self-contained with embedded base64 images")
