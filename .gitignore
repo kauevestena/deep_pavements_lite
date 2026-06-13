@@ -168,9 +168,9 @@ cython_debug/
 # core files (if they happen to appear!)
 core.*
 
-# tests:
-tests
-tests.py
+# tests (single-file ad-hoc tests, not the tests/ directory):
+# tests
+# tests.py
 
 # mappillary token:
 mapillary_token

@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:1.13.1-cuda11.6-cudnn8-runtime
+FROM pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime
 
 # prevent apt from hanging
 ARG DEBIAN_FRONTEND=noninteractive
@@ -19,14 +19,10 @@ WORKDIR $REPODIR
 
 # for mapillary downloading (submodule):
 RUN git submodule update --init --recursive
-RUN pip install -r my_mappilary_api/requirements.txt
+RUN pip install --no-cache-dir -r my_mappilary_api/requirements.txt
 
-# CLIP:
-RUN pip install ftfy regex tqdm
-RUN pip install git+https://github.com/openai/CLIP.git
-
-# other requirements:
-RUN pip install -r requirements.txt
+# all requirements (includes CLIP, ML deps, geospatial, etc.):
+RUN pip install --no-cache-dir -r requirements.txt
 
 # getting deep pavements model (optional):
 RUN wget https://huggingface.co/kauevestena/clip-vit-base-patch32-finetuned-surface-materials/resolve/main/model.pt?download=true -O deep_pavements_clip_model.pt || echo "Warning: Could not download model, will use default CLIP model"

@@ -5,8 +5,9 @@ from my_mappilary_api.mapillary_api import (
     mapillary_data_to_gdf,
     download_all_pictures_from_gdf,
 )
-from constants import data_path as DEFAULT_DATA_PATH
-from lib import *
+from deep_pavements import process_images
+from deep_pavements.constants import data_path as DEFAULT_DATA_PATH
+from deep_pavements.visualization import generate_map
 
 def main():
     parser = argparse.ArgumentParser(description="Deep Pavements Lite Runner")
@@ -32,6 +33,17 @@ def main():
         default=None,
         help="Mapillary access token used to authenticate requests",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Number of parallel workers for I/O operations (default: 1)",
+    )
+    parser.add_argument(
+        "--map",
+        action="store_true",
+        help="Generate an interactive Leaflet map of results",
+    )
     resolution_group = parser.add_mutually_exclusive_group()
     resolution_group.add_argument(
         "--half_res",
@@ -52,20 +64,12 @@ def main():
     output_dir = os.path.abspath(args.output_dir)
 
     # Read Mapillary token
-    token_files = ["mapillary_token", "workspace/data/mapillary_token", "data/mapillary_token"]
-    mapillary_token = args.mapillary_token.strip() if args.mapillary_token else None
+    mapillary_token = _get_mapillary_token(args.mapillary_token)
 
     if not mapillary_token:
-        for token_file in token_files:
-            if os.path.exists(token_file):
-                with open(token_file, "r") as f:
-                    mapillary_token = f.read().strip()
-                print(f"Found token in {token_file}")
-                break
-    
-    if not mapillary_token:
         print("Error: No Mapillary token found. Please create a file named 'mapillary_token' with your token.")
-        print("Expected locations:", token_files)
+        print("Expected locations: mapillary_token, workspace/data/mapillary_token, data/mapillary_token")
+        print("Or pass --mapillary_token <token> on the command line.")
         return
 
     # Get features
@@ -88,27 +92,58 @@ def main():
 
         # Download images and get GDF with file paths
         print("Downloading images...")
-        # Ensure data directory exists before saving any images
         os.makedirs(output_dir, exist_ok=True)
-        # Add file paths to the GDF
         gdf['file_path'] = gdf['id'].apply(lambda x: os.path.join(output_dir, f"{x}.jpg"))
         download_all_pictures_from_gdf(gdf, output_dir, scale_factor=scale_factor)
         print("Image download complete.")
 
         # Process images using the GDF with metadata
         print("Processing images...")
-        result_gdf = process_images(gdf, output_dir, debug_mode=args.debug)
-        
+        result_gdf = process_images(gdf, output_dir, debug_mode=args.debug, workers=args.workers)
+
         if not result_gdf.empty:
             print(f"Generated surface classifications for {len(result_gdf)} images.")
             print("Surface classification summary:")
             print(result_gdf[['filename', 'image_id', 'road', 'left_sidewalk', 'right_sidewalk']].to_string())
+
+            # Generate interactive map if requested
+            if args.map:
+                map_output = os.path.join(output_dir, "output")
+                generate_map(result_gdf, map_output)
         else:
             print("No surface classifications generated.")
-            
+
         print("Image processing complete.")
     else:
         print("No features found for the given bounding box.")
+
+
+def _get_mapillary_token(cli_token: str | None = None) -> str | None:
+    """
+    Get Mapillary API token from CLI argument, environment, or file.
+
+    Priority: CLI arg → environment variable → token files.
+    """
+    if cli_token:
+        return cli_token.strip()
+
+    # Check environment variable
+    import os
+    env_token = os.environ.get("MAPILLARY_API")
+    if env_token:
+        return env_token.strip()
+
+    # Check token files
+    token_files = ["mapillary_token", "workspace/data/mapillary_token", "data/mapillary_token"]
+    for token_file in token_files:
+        if os.path.exists(token_file):
+            with open(token_file, "r") as f:
+                token = f.read().strip()
+            print(f"Found token in {token_file}")
+            return token
+
+    return None
+
 
 if __name__ == "__main__":
     main()

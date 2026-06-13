@@ -1,36 +1,9 @@
-import os
-import torch
+"""
+Backward compatibility shim.
 
-# Use CUDA if available, otherwise use CPU
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+New code should import from deep_pavements.constants instead:
 
-params_path = "params.json"
+    from deep_pavements.constants import DEVICE, default_surfaces
+"""
 
-data_path = "data"
-
-
-ext_in = ".jpg"
-ext_out = ".png"
-
-pathway_categories = ["roads", "sidewalks", "car"]
-
-default_surfaces = [
-    'asphalt',
-    'concrete',
-    'concrete_plates',
-    'grass',
-    'ground',
-    'sett',
-    'paving_stones',
-    'cobblestone',
-    'gravel',
-    'sand',
-    'compacted',
-]
-
-
-clip_model_path = "deep_pavements_clip_model.pt"
-
-# Debug mode configuration
-DEBUG_MODE = False  # Global debug mode flag
-DEBUG_OUTPUT_DIR = "debug_outputs"  # Directory for debug outputs
+from deep_pavements.constants import *  # noqa: F401, F403

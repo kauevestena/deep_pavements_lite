@@ -8,8 +8,14 @@ for testing purposes, particularly useful in resource-constrained environments.
 
 import argparse
 import os
-from my_mappilary_api.mapillary_api import get_mapillary_images_metadata, mapillary_data_to_gdf, download_all_pictures_from_gdf
-from lib import *
+from my_mappilary_api.mapillary_api import (
+    get_mapillary_images_metadata,
+    mapillary_data_to_gdf,
+    download_all_pictures_from_gdf,
+)
+from deep_pavements import process_images
+from deep_pavements.constants import data_path
+
 
 def main():
     parser = argparse.ArgumentParser(description="Deep Pavements Lite Test Runner (Single Image)")
@@ -19,19 +25,50 @@ def main():
     parser.add_argument("--lon_max", type=float, required=True, help="Maximum longitude")
     parser.add_argument("--max_images", type=int, default=1, help="Maximum number of images to process (default: 1)")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode to save intermediary results")
+    parser.add_argument(
+        "-o",
+        "--output_dir",
+        default=data_path,
+        help="Directory to store downloaded images and generated outputs",
+    )
+    parser.add_argument(
+        "--mapillary_token",
+        default=None,
+        help="Mapillary access token used to authenticate requests",
+    )
+    resolution_group = parser.add_mutually_exclusive_group()
+    resolution_group.add_argument(
+        "--half_res",
+        action="store_true",
+        help="Downscale downloaded images to half of the original resolution",
+    )
+    resolution_group.add_argument(
+        "--quarter_res",
+        action="store_true",
+        help="Downscale downloaded images to one quarter of the original resolution",
+    )
     args = parser.parse_args()
+
+    scale_factor = 0.5 if args.half_res else 0.25 if args.quarter_res else 1.0
+    output_dir = os.path.abspath(args.output_dir)
 
     # Read Mapillary token
     token_files = ["mapillary_token", "workspace/data/mapillary_token", "data/mapillary_token"]
-    mapillary_token = None
-    
-    for token_file in token_files:
-        if os.path.exists(token_file):
-            with open(token_file, "r") as f:
-                mapillary_token = f.read().strip()
-            print(f"Found token in {token_file}")
-            break
-    
+    mapillary_token = args.mapillary_token.strip() if args.mapillary_token else None
+
+    if not mapillary_token:
+        env_token = os.environ.get("MAPILLARY_API")
+        if env_token:
+            mapillary_token = env_token.strip()
+
+    if not mapillary_token:
+        for token_file in token_files:
+            if os.path.exists(token_file):
+                with open(token_file, "r") as f:
+                    mapillary_token = f.read().strip()
+                print(f"Found token in {token_file}")
+                break
+
     if not mapillary_token:
         print("Error: No Mapillary token found. Please create a file named 'mapillary_token' with your token.")
         print("Expected locations:", token_files)
@@ -43,7 +80,7 @@ def main():
 
     if metadata.get("data"):
         print(f"Found {len(metadata['data'])} features.")
-        
+
         # Limit to max_images for testing
         if len(metadata['data']) > args.max_images:
             print(f"Limiting to {args.max_images} image(s) for testing")
@@ -52,24 +89,24 @@ def main():
         # Convert to GeoDataFrame
         gdf = mapillary_data_to_gdf(metadata)
 
-        # Download images and get GDF with file paths
+        # Download images
         print("Downloading images...")
-        # Add file paths to the GDF
-        gdf['file_path'] = gdf['id'].apply(lambda x: os.path.join(data_path, f"{x}.jpg"))
-        download_all_pictures_from_gdf(gdf, data_path)
+        os.makedirs(output_dir, exist_ok=True)
+        gdf['file_path'] = gdf['id'].apply(lambda x: os.path.join(output_dir, f"{x}.jpg"))
+        download_all_pictures_from_gdf(gdf, output_dir, scale_factor=scale_factor)
         print("Image download complete.")
 
-        # Process images using the GDF with metadata
+        # Process images
         print("Processing images...")
-        result_gdf = process_images(gdf, data_path, debug_mode=args.debug)
-        
+        result_gdf = process_images(gdf, output_dir, debug_mode=args.debug)
+
         if not result_gdf.empty:
             print(f"Generated surface classifications for {len(result_gdf)} images.")
             print("Surface classification summary:")
             print(result_gdf[['filename', 'image_id', 'road', 'left_sidewalk', 'right_sidewalk']].to_string())
         else:
             print("No surface classifications generated.")
-            
+
         print("Image processing complete.")
     else:
         print("No features found for the given bounding box.")
