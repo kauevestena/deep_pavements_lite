@@ -53,7 +53,7 @@ def _segment_with_oneformer(
     device: torch.device,
 ) -> tuple[np.ndarray, str]:
     """Segment using OneFormer, trying full then half resolution."""
-    from deep_pavements.models import OneFormerModelCache
+    from modules.models import OneFormerModelCache
 
     processor, model = OneFormerModelCache.load(device)
 

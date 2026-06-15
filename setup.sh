@@ -34,7 +34,7 @@ fi
 
 # Run smoke test to verify setup
 echo "🧪 Running smoke test..."
-python smoke_test.py
+python tests/smoke_test.py
 
 if [ $? -eq 0 ]; then
     echo "✅ Setup completed successfully!"

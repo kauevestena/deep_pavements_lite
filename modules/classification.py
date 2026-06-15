@@ -17,7 +17,7 @@ import numpy as np
 import torch
 from PIL import Image, ImageDraw
 
-from deep_pavements.constants import (
+from modules.constants import (
     CLIP_INPUT_SIZE,
     MIN_REGION_SIZE,
     PATHWAY_CLASS_MAPPING,
@@ -26,8 +26,8 @@ from deep_pavements.constants import (
     ext_out,
     pathway_categories,
 )
-from deep_pavements.geometry import extract_polygons_from_mask
-from deep_pavements.segmentation import (
+from modules.geometry import extract_polygons_from_mask
+from modules.segmentation import (
     create_segmentation_overlay,
     get_cityscapes_color_encoding,
     segment_image,

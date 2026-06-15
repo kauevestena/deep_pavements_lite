@@ -4,7 +4,7 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import Point
 
-from deep_pavements.pipeline import process_images
+from modules.pipeline import process_images
 
 
 # ── process_images ────────────────────────────────────────────────────────

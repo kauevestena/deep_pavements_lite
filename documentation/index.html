@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deep Pavements Lite — Documentation</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- Highlight.js CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    
+    <!-- Marked.js, Highlight.js, and Mermaid.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    
+    <style>
+        :root {
+            --bg-primary: #080b11;
+            --bg-secondary: rgba(13, 18, 30, 0.85);
+            --bg-sidebar: rgba(10, 14, 23, 0.95);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --accent-primary: #8b5cf6;
+            --accent-secondary: #ec4899;
+            --accent-glow: rgba(139, 92, 246, 0.15);
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
+            --sidebar-width: 280px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        /* Background Glows */
+        .ambient-glow-1 {
+            position: fixed;
+            top: -10%;
+            right: -10%;
+            width: 50vw;
+            height: 50vw;
+            background: radial-gradient(circle, rgba(139, 92, 246, 0.08) 0%, transparent 70%);
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .ambient-glow-2 {
+            position: fixed;
+            bottom: -10%;
+            left: -10%;
+            width: 50vw;
+            height: 50vw;
+            background: radial-gradient(circle, rgba(236, 72, 153, 0.05) 0%, transparent 70%);
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        /* Sidebar styling */
+        .sidebar {
+            width: var(--sidebar-width);
+            background-color: var(--bg-sidebar);
+            border-right: 1px solid var(--border-color);
+            padding: 2.5rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            height: 100vh;
+            z-index: 10;
+            backdrop-filter: blur(20px);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 3rem;
+            text-decoration: none;
+        }
+
+        .brand-logo {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            border-radius: 8px;
+            box-shadow: 0 0 15px rgba(139, 92, 246, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            color: #fff;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .brand-name {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            font-size: 1.15rem;
+            letter-spacing: 0.5px;
+            background: linear-gradient(135deg, #fff 40%, var(--text-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .nav-item a {
+            display: flex;
+            align-items: center;
+            padding: 0.85rem 1rem;
+            color: var(--text-secondary);
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 500;
+            font-size: 0.95rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid transparent;
+        }
+
+        .nav-item a:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.03);
+            border-color: rgba(255, 255, 255, 0.05);
+            padding-left: 1.25rem;
+        }
+
+        .nav-item.active a {
+            color: #fff;
+            background: linear-gradient(90deg, rgba(139, 92, 246, 0.15) 0%, rgba(139, 92, 246, 0.02) 100%);
+            border-left: 3px solid var(--accent-primary);
+            border-top-left-radius: 0;
+            border-bottom-left-radius: 0;
+            padding-left: 1.25rem;
+            box-shadow: inset 5px 0 15px rgba(139, 92, 246, 0.05);
+        }
+
+        .sidebar-footer {
+            margin-top: auto;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-align: center;
+            border-top: 1px solid var(--border-color);
+            padding-top: 1.5rem;
+        }
+
+        /* Main Content Container */
+        .main-container {
+            margin-left: var(--sidebar-width);
+            flex: 1;
+            min-height: 100vh;
+            padding: 4rem 6rem;
+            position: relative;
+            z-index: 1;
+            max-width: 1200px;
+        }
+
+        .content-card {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 3.5rem;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            opacity: 0;
+            transform: translateY(15px);
+            transition: opacity 0.5s ease, transform 0.5s ease;
+        }
+
+        .content-card.loaded {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Markdown Typography overrides */
+        .markdown-body h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin-bottom: 2rem;
+            background: linear-gradient(135deg, #fff, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 1rem;
+        }
+
+        .markdown-body h2 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.6rem;
+            font-weight: 700;
+            margin-top: 2.5rem;
+            margin-bottom: 1.2rem;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .markdown-body h3 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-top: 1.8rem;
+            margin-bottom: 0.8rem;
+            color: #e5e7eb;
+        }
+
+        .markdown-body p {
+            margin-bottom: 1.25rem;
+            color: var(--text-secondary);
+            font-size: 1rem;
+            line-height: 1.75;
+        }
+
+        .markdown-body ul, .markdown-body ol {
+            margin-bottom: 1.5rem;
+            padding-left: 1.75rem;
+            color: var(--text-secondary);
+        }
+
+        .markdown-body li {
+            margin-bottom: 0.5rem;
+        }
+
+        .markdown-body code {
+            font-family: 'Fira Code', monospace;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 0.2rem 0.4rem;
+            border-radius: 6px;
+            font-size: 0.9em;
+            color: #f472b6;
+        }
+
+        .markdown-body pre {
+            background: rgba(10, 14, 23, 0.8) !important;
+            border: 1px solid var(--border-color) !important;
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+            overflow-x: auto;
+        }
+
+        .markdown-body pre code {
+            background: transparent;
+            padding: 0;
+            color: inherit;
+            font-size: 0.9rem;
+        }
+
+        .markdown-body blockquote {
+            border-left: 4px solid var(--accent-primary);
+            background: rgba(139, 92, 246, 0.03);
+            padding: 1rem 1.5rem;
+            margin-bottom: 1.5rem;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .markdown-body blockquote p {
+            margin: 0;
+            font-style: italic;
+        }
+
+        .markdown-body hr {
+            border: 0;
+            height: 1px;
+            background: var(--border-color);
+            margin: 2.5rem 0;
+        }
+
+        .markdown-body table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 1.5rem;
+            font-size: 0.95rem;
+        }
+
+        .markdown-body th {
+            background: rgba(255, 255, 255, 0.02);
+            color: #fff;
+            text-align: left;
+            padding: 0.75rem 1rem;
+            border-bottom: 2px solid var(--border-color);
+            font-weight: 600;
+        }
+
+        .markdown-body td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-secondary);
+        }
+
+        .markdown-body tr:hover td {
+            background: rgba(255, 255, 255, 0.01);
+        }
+
+        /* Mermaid Graph styling */
+        .mermaid-render {
+            display: flex;
+            justify-content: center;
+            background: rgba(10, 14, 23, 0.5);
+            border: 1px solid var(--border-color);
+            padding: 2rem;
+            border-radius: 16px;
+            margin: 1.5rem 0;
+        }
+
+        .mermaid-render svg {
+            max-width: 100%;
+            height: auto;
+        }
+
+        /* Responsive Layout */
+        @media (max-width: 1024px) {
+            .sidebar {
+                width: 240px;
+            }
+            .main-container {
+                margin-left: 240px;
+                padding: 3rem 4rem;
+            }
+        }
+
+        @media (max-width: 768px) {
+            body {
+                flex-direction: column;
+            }
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: relative;
+                padding: 1.5rem;
+            }
+            .brand {
+                margin-bottom: 1.5rem;
+            }
+            .main-container {
+                margin-left: 0;
+                padding: 1.5rem;
+            }
+            .content-card {
+                padding: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="ambient-glow-1"></div>
+    <div class="ambient-glow-2"></div>
+
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+        <a href="#" class="brand">
+            <div class="brand-logo">P</div>
+            <div class="brand-name">Deep Pavements</div>
+        </a>
+        
+        <nav>
+            <ul class="nav-list">
+                <li class="nav-item active" data-doc="getting_started">
+                    <a href="#getting_started">Getting Started</a>
+                </li>
+                <li class="nav-item" data-doc="architecture">
+                    <a href="#architecture">Architecture</a>
+                </li>
+                <li class="nav-item" data-doc="api_reference">
+                    <a href="#api_reference">API Reference</a>
+                </li>
+                <li class="nav-item" data-doc="configuration">
+                    <a href="#configuration">Configuration</a>
+                </li>
+            </ul>
+        </nav>
+        
+        <footer class="sidebar-footer">
+            <p>v1.0.0 — Stable</p>
+            <p style="margin-top: 0.25rem;">MIT License</p>
+        </footer>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-container">
+        <article class="content-card markdown-body" id="content-body">
+            <!-- Loaded content will render here -->
+        </article>
+    </main>
+
+    <!-- INLINE MARKDOWN FILE FALLBACKS -->
+    <script type="text/markdown" id="doc-getting_started">
+# Getting Started
+
+Welcome to **Deep Pavements Lite**, an automated pipeline for pavement surface material classification from street-level imagery using CLIP and OneFormer.
+
+---
+
+## 📋 Requirements
+
+- **Operating System:** Linux / macOS
+- **Python:** version `3.10` or higher
+- **Core Dependencies:** PyTorch, Torchvision, Transformers, GeoPandas, Shapely, OpenCV
+- **Mapillary Access:** A Mapillary developer token (v4 API) is required to query metadata and download images.
+
+---
+
+## 🚀 Installation & Setup
+
+Follow these steps to set up the environment and run your first analysis:
+
+### 1. Initialize Submodules
+Deep Pavements Lite uses the `my_mappilary_api` submodule for map data downloading. If you haven't done so, initialize it:
+```bash
+git submodule update --init --recursive
+```
+
+### 2. Configure Your API Token
+Create a file named `mapillary_token` in the root of the project folder containing your Mapillary access token:
+```bash
+echo "YOUR_MAPILLARY_TOKEN" > mapillary_token
+```
+*Alternatively, you can export it to your environment:*
+```bash
+export MAPILLARY_API="YOUR_MAPILLARY_TOKEN"
+```
+
+### 3. Run the Automated Setup
+Use the provided `setup.sh` script to configure the directories, download the fine-tuned CLIP model weights, and run the verification smoke test:
+```bash
+./setup.sh
+```
+
+---
+
+## 🏃 Running the Curitiba Sample
+
+To run the pipeline over the sample area in **Curitiba, Brazil** using the command line runner:
+
+```bash
+.venv/bin/python runner.py \
+    --lat_min -25.452901 \
+    --lon_min -49.270045 \
+    --lat_max -25.448231 \
+    --lon_max -49.256247 \
+    --map \
+    --debug
+```
+
+### Command Options:
+- `--map`: Generates a global interactive Leaflet map of results inside `data/output/`.
+- `--debug`: Saves intermediary step images (heuristic masks, crops) and generates a detailed step-by-step debug HTML report.
+- `--half_res` / `--quarter_res`: Downscale images to save memory and CPU/GPU processing time.
+
+---
+
+## 📁 Output Structure
+
+All outputs are saved to the `data/` directory by default:
+
+```
+data/
+├── output/
+│   ├── surface_classifications.geojson  # GeoJSON spatial feature dataset
+│   ├── surface_classifications.gpkg     # GeoPackage database
+│   ├── model_info.json                  # Metadata about model versions
+│   └── global_map.html                  # Interactive Leaflet map (with --map)
+└── debug_outputs/
+    ├── reports/
+    │   └── debug_report.html            # Standalone visual HTML report (with --debug)
+    └── [image_id]_roads_0.png           # Intermediary cropped segments for CLIP
+```
+    </script>
+
+    <script type="text/markdown" id="doc-architecture">
+# Architecture Overview
+
+Deep Pavements Lite uses a multi-modal computer vision pipeline to extract and classify sidewalk and road surface materials from street-level photographs.
+
+---
+
+## ⚙️ The Execution Pipeline
+
+The processing pipeline runs in several distinct phases:
+
+```mermaid
+graph TD
+    A[Mapillary API Query] -->|Images Metadata| B[Image Downloader]
+    B -->|Local JPGs| C[OneFormer Segmentation]
+    C -->|Class Masks| D[Geometry Engine]
+    D -->|Segment Polygons| E[CLIP Classifier]
+    E -->|Surface Preds| F[Side Classification]
+    F -->|Consolidated GDF| G[Exporter]
+    G -->|GeoJSON/GPKG| H[Spatial Dataset]
+    G -->|Leaflet Map| I[Global Map HTML]
+    G -->|Intermediary Images| J[Debug HTML Report]
+```
+
+### 1. Image Download & Bounding Box Query
+The pipeline queries the Mapillary Graph API v4 for all image coordinates, sequences, and metadata falling inside the requested bounding box. Images are downloaded asynchronously to disk (supporting downscaling for speed and memory conservation).
+
+### 2. Semantic Segmentation (OneFormer)
+Each image is processed with **OneFormer** (trained on Cityscapes) to generate a semantic mask segmenting:
+- **Roads** (Class ID `0`)
+- **Sidewalks** (Class ID `1`)
+- **Cars** (Class ID `13`)
+
+### 3. Geometry & Polygon Extraction
+The pipeline extracts shapes from the segmentation mask:
+- Contours are converted to Shapely polygons.
+- The **Road Axis Line** is computed to divide the view.
+- Sidewalk segments are sorted into **left** and **right** regions relative to the camera heading and road axis.
+
+### 4. CLIP Classification
+For each detected road or sidewalk polygon:
+1. The bounding box of the polygon is cropped from the original street image.
+2. The crop is passed to the **fine-tuned CLIP model** (`ViT-B/32`).
+3. The model classifies the surface into one of 11 canonical materials (e.g., asphalt, concrete, paving stones, ground).
+
+### 5. Consolidation & Export
+Results are aggregated into a single GeoDataFrame where each image represents a point feature containing:
+- `road`: surface type and confidence.
+- `left_sidewalk`: surface type (or `no_sidewalk` / `car_hindered`).
+- `right_sidewalk`: surface type (or `no_sidewalk` / `car_hindered`).
+
+---
+
+## 🛠️ Code Module Layout
+
+The codebase has been refactored for clarity and modularity under `modules/`:
+
+- **`pipeline.py`:** Core entry point coordinating the end-to-end processing.
+- **`segmentation.py`:** Handles image segmentation with OneFormer or fallback heuristics.
+- **`classification.py`:** Prepares crops and coordinates CLIP surface classification.
+- **`models.py`:** Model weights download and instance factories.
+- **`geometry.py`:** Spatial operations, road axis computation, left/right sorting.
+- **`visualization.py`:** Renders interactive Leaflet maps.
+- **`debug.py`:** Generates localized intermediary debug images and HTML reports.
+- **`constants.py`:** Configuration parameters, file extensions, and class mappings.
+    </script>
+
+    <script type="text/markdown" id="doc-api_reference">
+# API Reference
+
+This page describes the primary public APIs and modules in the Deep Pavements Lite package.
+
+---
+
+## 📌 Pipeline Module (`modules.pipeline`)
+
+The main interface for running the end-to-end processing pipeline.
+
+### `process_images(images_gdf, output_path, debug_mode=False, workers=1)`
+Processes all street images defined in the metadata GeoDataFrame.
+
+- **Parameters:**
+  - `images_gdf` *(geopandas.GeoDataFrame)*: Input table containing image IDs, file paths, and geospatial geometry (points).
+  - `output_path` *(str)*: Target directory to save result GeoJSON, GeoPackage, and JSON metadata.
+  - `debug_mode` *(bool, optional)*: If `True`, enables step-by-step intermediate image export and builds an HTML visual debug report. Default is `False`.
+  - `workers` *(int, optional)*: Number of parallel workers for I/O operations. Default is `1`.
+- **Returns:**
+  - `geopandas.GeoDataFrame`: The processed GDF enriched with `road`, `left_sidewalk`, and `right_sidewalk` classification columns.
+
+---
+
+## 📌 Classification Module (`modules.classification`)
+
+Interfaces with CLIP to identify material surface classes.
+
+### `classify_surface_type(image, polygon, model, preprocess, device="cpu")`
+Classifies the surface material of a specific segmented polygon.
+
+- **Parameters:**
+  - `image` *(PIL.Image)*: Original high-resolution street photo.
+  - `polygon` *(np.ndarray)*: Flattened list of polygon boundary coordinates `[x1, y1, x2, y2, ...]`.
+  - `model` *(CLIP)*: CLIP model instance.
+  - `preprocess` *(callable)*: Image transform function.
+  - `device` *(str, optional)*: Execution device (`"cuda"` or `"cpu"`).
+- **Returns:**
+  - `dict`: A dictionary containing predicted `surface` string and `confidence` float.
+
+---
+
+## 📌 Geometry Module (`modules.geometry`)
+
+Performs spatial checks and shapes classification.
+
+### `get_road_axis_line(road_polygons, image_size)`
+Calculates the central dividing line of the road using PCA or centroid orientations.
+
+- **Parameters:**
+  - `road_polygons` *(list[np.ndarray])*: Polygons representing the road surface.
+  - `image_size` *(tuple[int, int])*: Width and height of the image.
+- **Returns:**
+  - `shapely.geometry.LineString | None`: Dividing line representing the road axis.
+
+### `classify_sidewalk_regions(segmentation_result, road_axis, image_size)`
+Divides detected sidewalks into left and right sides relative to the road axis.
+
+- **Parameters:**
+  - `segmentation_result` *(dict)*: Dictionary of detected polygons and their surface types.
+  - `road_axis` *(LineString)*: Calculated dividing axis line.
+  - `image_size` *(tuple[int, int])*: Width and height of the image.
+- **Returns:**
+  - `dict`: Dictionary mapping `"left_sidewalk"` and `"right_sidewalk"` to their surface types.
+
+---
+
+## 📌 Visualization Module (`modules.visualization`)
+
+Renders GIS overlays and interactive maps.
+
+### `generate_map(gdf, output_path)`
+Creates a standalone, interactive Leaflet HTML map showing points color-coded by pavement surface materials.
+
+- **Parameters:**
+  - `gdf` *(geopandas.GeoDataFrame)*: The final processed GDF containing pavement classification results.
+  - `output_path` *(str)*: Target folder where `global_map.html` and assets will be saved.
+    </script>
+
+    <script type="text/markdown" id="doc-configuration">
+# Configuration & Settings
+
+Deep Pavements Lite can be customized by modifying environment variables, parameters files, or the package constants.
+
+---
+
+## ⚙️ Configuration Files
+
+### `params.json`
+Located at the root of the repository, this file stores basic runtime parameters:
+```json
+{
+  "max_images": null,
+  "debug": false,
+  "half_res": false,
+  "quarter_res": false,
+  "workers": 1
+}
+```
+
+---
+
+## 📌 Constant Definitions (`modules.constants`)
+
+Core settings are centralized in `modules/constants.py`:
+
+- **`DEVICE`**: Automatically set to `"cuda"` if a GPU is available; otherwise defaults to `"cpu"`.
+- **`CLIP_ARCHITECTURE`**: Set to `"ViT-B/32"`.
+- **`pathway_categories`**: Defines target segmentation classes: `["roads", "sidewalks", "car"]`.
+- **`PATHWAY_CLASS_MAPPING`**: Maps target classes to Cityscapes IDs:
+  - `roads`: Class ID `0`
+  - `sidewalks`: Class ID `1`
+  - `car`: Class ID `13`
+- **`default_surfaces`**: The 11 surface types classified by CLIP:
+  - `asphalt`, `concrete`, `concrete_plates`, `grass`, `ground`, `sett`, `paving_stones`, `cobblestone`, `gravel`, `sand`, `compacted`.
+
+---
+
+## 🌐 Environment Variables
+
+Use environment variables to customize runtime behavior:
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `MAPILLARY_API` | Your Mapillary developer access token. | None |
+| `TO_PRECACHE` | If `true`, downloads models at build-time (used in Dockerfile). | `true` |
+
+---
+
+## 🤖 Model Customization
+
+By default, the pipeline automatically fetches the fine-tuned CLIP model from Hugging Face:
+- **Repository:** `kauevestena/clip-vit-base-patch32-finetuned-surface-materials`
+- **Filename:** `pytorch_model.bin`
+- **Direct Download URL:** `https://huggingface.co/kauevestena/clip-vit-base-patch32-finetuned-surface-materials/resolve/main/model.pt`
+
+To use a custom model, place your model weight file at the root named `deep_pavements_clip_model.pt`.
+    </script>
+
+    <!-- App Engine script -->
+    <script>
+        // Initialize Mermaid
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: 'dark',
+            securityLevel: 'loose',
+            themeVariables: {
+                background: '#0a0e17',
+                primaryColor: '#8b5cf6',
+                primaryTextColor: '#f3f4f6',
+                lineColor: '#374151',
+                textColor: '#9ca3af'
+            }
+        });
+
+        // Configure Marked.js
+        marked.setOptions({
+            gfm: true,
+            breaks: true,
+            highlight: function(code, lang) {
+                const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+                return hljs.highlight(code, { language }).value;
+            }
+        });
+
+        // Navigation logic
+        const navItems = document.querySelectorAll('.nav-item');
+        const contentBody = document.getElementById('content-body');
+
+        async function loadDocument(docId) {
+            contentBody.classList.remove('loaded');
+            
+            // Highlight sidebar item
+            navItems.forEach(item => {
+                if (item.getAttribute('data-doc') === docId) {
+                    item.classList.add('active');
+                } else {
+                    item.classList.remove('active');
+                }
+            });
+
+            // 1. Try to fetch the external markdown file first (works when running http-server)
+            let markdownText = "";
+            try {
+                const response = await fetch(`${docId}.md`);
+                if (response.ok) {
+                    markdownText = await response.text();
+                } else {
+                    throw new Error(`Status ${response.status}`);
+                }
+            } catch (err) {
+                // 2. Fallback to inline scripts if CORS blocks local fetching (file:// protocol)
+                console.warn(`Local fetch failed (${err.message}), falling back to embedded markdown.`);
+                const scriptEl = document.getElementById(`doc-${docId}`);
+                if (scriptEl) {
+                    markdownText = scriptEl.textContent;
+                } else {
+                    markdownText = `# ⚠️ Error\nCould not load document "${docId}".`;
+                }
+            }
+
+            // Render Markdown
+            contentBody.innerHTML = marked.parse(markdownText);
+            
+            // Post-process code snippets and Mermaid diagrams
+            // Render Mermaid blocks
+            const mermaidBlocks = contentBody.querySelectorAll('.language-mermaid');
+            for (let i = 0; i < mermaidBlocks.length; i++) {
+                const block = mermaidBlocks[i];
+                const parent = block.parentElement; // <pre>
+                const code = block.textContent;
+                const insertDiv = document.createElement('div');
+                insertDiv.className = 'mermaid-render';
+                insertDiv.id = `mermaid-svg-${i}`;
+                parent.parentNode.replaceChild(insertDiv, parent);
+                try {
+                    const renderId = `mermaid-render-svg-${i}`;
+                    const { svg } = await mermaid.render(renderId, code);
+                    insertDiv.innerHTML = svg;
+                } catch (err) {
+                    insertDiv.innerHTML = `<span style="color: #ef4444; font-family: monospace;">Mermaid Render Error: ${err.message}</span>`;
+                }
+            }
+
+            // Trigger code syntax highlighting
+            contentBody.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+
+            // Animation transition
+            setTimeout(() => {
+                contentBody.classList.add('loaded');
+            }, 50);
+        }
+
+        // Router based on hash change
+        function handleRoute() {
+            const hash = window.location.hash.replace('#', '') || 'getting_started';
+            loadDocument(hash);
+        }
+
+        window.addEventListener('hashchange', handleRoute);
+        window.addEventListener('DOMContentLoaded', handleRoute);
+    </script>
+</body>
+</html>

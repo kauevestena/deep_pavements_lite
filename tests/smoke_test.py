@@ -14,8 +14,8 @@ import geopandas as gpd
 from shapely.geometry import Point
 
 # Import from refactored package
-from deep_pavements import process_images
-from deep_pavements.constants import data_path
+from modules import process_images
+from modules.constants import data_path
 
 def get_mapillary_token():
     """Get Mapillary API token from environment or file"""

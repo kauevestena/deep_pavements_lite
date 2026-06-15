@@ -9,8 +9,8 @@ build step, avoiding runtime downloads.
 import sys
 sys.path.append('.')
 
-from deep_pavements.models import load_clip_model
-from deep_pavements.constants import DEVICE
+from modules.models import load_clip_model
+from modules.constants import DEVICE
 
 # Load CLIP model — this triggers the download and caching
 model, preprocess, is_real = load_clip_model(DEVICE)

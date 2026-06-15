@@ -59,7 +59,7 @@ dev = [
 ]
 
 [project.scripts]
-deep-pavements = "deep_pavements.pipeline:main"
+deep-pavements = "modules.pipeline:main"
 
 [project.urls]
 Homepage = "https://github.com/kauevestena/deep_pavements_lite"

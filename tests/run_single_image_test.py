@@ -13,8 +13,8 @@ from my_mappilary_api.mapillary_api import (
     mapillary_data_to_gdf,
     download_all_pictures_from_gdf,
 )
-from deep_pavements import process_images
-from deep_pavements.constants import data_path
+from modules import process_images
+from modules.constants import data_path
 
 
 def main():

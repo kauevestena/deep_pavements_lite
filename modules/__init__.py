@@ -5,11 +5,11 @@ This package provides the core functionality for analyzing pavement surfaces in
 street-level imagery using computer vision and machine learning techniques.
 
 Main entry point:
-    from deep_pavements import process_images
+    from modules import process_images
 """
 
-from deep_pavements.pipeline import process_images
-from deep_pavements.constants import (
+from modules.pipeline import process_images
+from modules.constants import (
     DEVICE,
     default_surfaces,
     pathway_categories,

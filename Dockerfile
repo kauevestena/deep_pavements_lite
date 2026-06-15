@@ -31,6 +31,6 @@ RUN wget https://huggingface.co/kauevestena/clip-vit-base-patch32-finetuned-surf
 ENV TO_PRECACHE=true
 
 RUN if [ "$TO_PRECACHE" = "true" ]; then \
-    (python precaching/precaching_clip.py || echo "Warning: CLIP precaching failed") && \
-    (python precaching/precaching_oneformer.py || echo "Warning: OneFormer precaching failed"); \
+    (python modules/precaching/precaching_clip.py || echo "Warning: CLIP precaching failed") && \
+    (python modules/precaching/precaching_oneformer.py || echo "Warning: OneFormer precaching failed"); \
     fi

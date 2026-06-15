@@ -14,13 +14,13 @@ across lib.py, download_finetuned_model.py, and precaching/precaching_clip.py.
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, cast
 
 import clip
 import torch
 import torchvision.transforms as transforms
 
-from deep_pavements.constants import (
+from modules.constants import (
     CLIP_ARCHITECTURE,
     CLIP_EMBEDDING_DIM,
     CLIP_INPUT_SIZE,
@@ -82,13 +82,16 @@ def create_mock_clip_model(
     )
 
     def mock_tokenize(
-        texts: str | list[str], context_length: int = 77, truncate: bool = True
-    ) -> torch.Tensor:
+        texts: list[str] | str, context_length: int = 77, truncate: bool = False
+    ) -> torch.IntTensor | torch.LongTensor:
         """Mock tokenize function that returns dummy tokens."""
         if isinstance(texts, str):
             texts = [texts]
         batch_size = len(texts)
-        return torch.randint(0, 1000, (batch_size, context_length), device=device)
+        return cast(
+            torch.IntTensor | torch.LongTensor,
+            torch.randint(0, 1000, (batch_size, context_length), device=device),
+        )
 
     # Monkey-patch the clip module to use our mock tokenize
     clip.tokenize = mock_tokenize
@@ -296,7 +299,7 @@ class OneFormerModelCache:
             OneFormerProcessor,
             OneFormerForUniversalSegmentation,
         )
-        from deep_pavements.constants import ONEFORMER_MODEL_ID
+        from modules.constants import ONEFORMER_MODEL_ID
 
         print("Loading OneFormer model...")
         cls._processor = OneFormerProcessor.from_pretrained(ONEFORMER_MODEL_ID)

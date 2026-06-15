@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from deep_pavements.classification import classify_surface_type
-from deep_pavements.constants import default_surfaces
+from modules.classification import classify_surface_type
+from modules.constants import default_surfaces
 
 
 # ── classify_surface_type ─────────────────────────────────────────────────

@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from shapely.geometry import LineString, Polygon
 
-from deep_pavements.geometry import (
+from modules.geometry import (
     calculate_polygon_area,
     classify_side_surface,
     classify_sidewalk_regions,

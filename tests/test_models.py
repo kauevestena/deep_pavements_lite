@@ -2,7 +2,7 @@
 
 import torch
 
-from deep_pavements.models import create_mock_clip_model
+from modules.models import create_mock_clip_model
 
 
 # ── create_mock_clip_model ────────────────────────────────────────────────

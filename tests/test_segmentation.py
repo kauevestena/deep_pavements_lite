@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from deep_pavements.segmentation import (
+from modules.segmentation import (
     create_heuristic_segmentation,
     create_segmentation_overlay,
     get_cityscapes_color_encoding,

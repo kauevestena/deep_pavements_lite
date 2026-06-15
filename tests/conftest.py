@@ -1,5 +1,5 @@
 """
-Shared pytest fixtures for the deep_pavements test suite.
+Shared pytest fixtures for the modules test suite.
 
 Provides mock objects, sample data, and temporary directories used across
 all test modules so that tests run without GPU, network, or real model access.

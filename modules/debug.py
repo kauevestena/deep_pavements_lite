@@ -12,7 +12,7 @@ import os
 from datetime import datetime
 from typing import Any
 
-from deep_pavements.visualization import SURFACE_COLORS
+from modules.visualization import SURFACE_COLORS
 
 
 def generate_debug_html_report(
