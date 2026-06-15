@@ -12,6 +12,8 @@ import os
 from datetime import datetime
 from typing import Any
 
+from deep_pavements.visualization import SURFACE_COLORS
+
 
 def generate_debug_html_report(
     debug_data: list[dict[str, Any]],
@@ -64,6 +66,22 @@ def generate_debug_html_report(
                 unique_surfaces.add(surface)
 
     avg_confidence = sum(all_confidences) / len(all_confidences) if all_confidences else 0.0
+
+    # Build map items for the global map
+    map_items = []
+    for item in debug_data:
+        classification = item.get("surface_classification", {})
+        map_items.append({
+            "image_id": item.get("image_id"),
+            "filename": item.get("filename"),
+            "coordinates": item.get("coordinates"),
+            "road": classification.get("road", "unknown"),
+            "road_confidence": classification.get("road_confidence", 0.0),
+            "left_sidewalk": classification.get("left_sidewalk", "unknown"),
+            "left_confidence": classification.get("left_confidence", 0.0),
+            "right_sidewalk": classification.get("right_sidewalk", "unknown"),
+            "right_confidence": classification.get("right_confidence", 0.0),
+        })
 
     # Sort surfaces for distribution bar chart
     sorted_surfaces = sorted(surface_counts.items(), key=lambda x: x[1], reverse=True)
@@ -850,6 +868,54 @@ def generate_debug_html_report(
                 grid-template-columns: 1fr;
             }}
         }}
+
+        /* Global Map Section */
+        .global-map-section {{
+            margin-bottom: 40px;
+        }}
+
+        .map-card {{
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: var(--shadow-sm);
+        }}
+
+        .map-card h3 {{
+            font-family: var(--font-title);
+            font-size: 16px;
+            margin-bottom: 16px;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+
+        #global-map {{
+            width: 100%;
+            height: 450px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+            z-index: 1;
+        }}
+
+        /* Card Flashing Highlight Animation */
+        @keyframes border-flash {{
+            0% {{
+                box-shadow: 0 0 0 4px var(--accent-color);
+                border-color: var(--accent-color);
+            }}
+            100% {{
+                box-shadow: var(--shadow-md);
+                border-color: var(--border-color);
+            }}
+        }}
+
+        .flash-highlight {{
+            animation: border-flash 2s ease-out;
+        }}
     </style>
 </head>
 <body>
@@ -895,6 +961,14 @@ def generate_debug_html_report(
             <div class="dist-card">
                 <h3>Surface Material Distribution</h3>
                 {distribution_html if distribution_html else '<p style="font-size: 13px; color: var(--text-secondary);">No surface materials detected yet.</p>'}
+            </div>
+        </section>
+
+        <!-- Global Map Section -->
+        <section class="global-map-section">
+            <div class="map-card">
+                <h3>🗺️ Global Surface Classification Map</h3>
+                <div id="global-map"></div>
             </div>
         </section>
 
@@ -988,7 +1062,7 @@ def generate_debug_html_report(
             """
 
         html_content += f"""
-            <article class="image-card" 
+            <article class="image-card" id="card-{image_id}" 
                  data-id="{image_id}" 
                  data-filename="{filename}" 
                  data-segments="{len(segments)}" 
@@ -1341,9 +1415,138 @@ def generate_debug_html_report(
         const savedTheme = localStorage.getItem('deep-pavements-theme') || 'dark';
         document.documentElement.setAttribute('data-theme', savedTheme);
         themeToggle.textContent = savedTheme === 'dark' ? '☀️ Light Mode' : '🌙 Dark Mode';
+
+        // Global Map Initialization
+        (function() {
+            const globalMapDiv = document.getElementById('global-map');
+            if (!globalMapDiv) return;
+
+            if (typeof L === 'undefined') {
+                globalMapDiv.innerHTML = `
+                    <div class="map-error">
+                        <p>Map tiles cannot be loaded (Offline or CDN unavailable)</p>
+                    </div>`;
+                return;
+            }
+
+            try {
+                const mapItems = __MAP_ITEMS_PLACEHOLDER__;
+                const surfaceColors = __SURFACE_COLORS_PLACEHOLDER__;
+
+                const globalMap = L.map('global-map').setView([0, 0], 2);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '© OpenStreetMap contributors'
+                }).addTo(globalMap);
+
+                const markers = [];
+                mapItems.forEach(item => {
+                    if (!item.coordinates) return;
+                    const parts = item.coordinates.split(',').map(s => parseFloat(s.trim()));
+                    if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) {
+                        return;
+                    }
+                    const lon = parts[0];
+                    const lat = parts[1];
+                    const roadColor = surfaceColors[item.road] || '#999';
+
+                    const marker = L.circleMarker([lat, lon], {
+                        radius: 8,
+                        fillColor: roadColor,
+                        color: '#333',
+                        weight: 2,
+                        opacity: 1,
+                        fillOpacity: 0.85
+                    });
+
+                    function badge(surface) {
+                        const c = surfaceColors[surface] || '#999';
+                        return '<span class="surface-badge" style="background:' + c + '; padding: 2px 6px; border-radius: 4px; color: white; font-weight: bold; font-size: 11px;">' + surface + '</span>';
+                    }
+
+                    const conf = (v) => (v !== undefined && v !== null) ? (v * 100).toFixed(0) + '%' : 'N/A';
+
+                    const popupContent = `
+                        <div style="font-family: var(--font-sans); min-width: 220px;">
+                            <h4 style="margin-bottom: 8px; font-family: var(--font-title); font-size: 13px; border-bottom: 1px solid var(--border-color); padding-bottom: 4px; color: var(--text-primary);">Image Classification</h4>
+                            <table class="popup-table" style="width: 100%; border-collapse: collapse; font-size: 12px; color: var(--text-primary);">
+                                <tr>
+                                    <td style="padding: 4px 0; font-weight: bold; color: var(--text-secondary);">Image ID</td>
+                                    <td style="padding: 4px 0;">${item.image_id}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 4px 0; font-weight: bold; color: var(--text-secondary);">Filename</td>
+                                    <td style="padding: 4px 0;">
+                                        <a href="#card-${item.image_id}" style="color: var(--accent-color); text-decoration: none; font-weight: 600;" onclick="scrollToCard('${item.image_id}')">
+                                            ${item.filename} ↗
+                                        </a>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 4px 0; font-weight: bold; color: var(--text-secondary);">Road</td>
+                                    <td style="padding: 4px 0;">${badge(item.road)} ${conf(item.road_confidence)}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 4px 0; font-weight: bold; color: var(--text-secondary);">Left Sidewalk</td>
+                                    <td style="padding: 4px 0;">${badge(item.left_sidewalk)} ${conf(item.left_confidence)}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 4px 0; font-weight: bold; color: var(--text-secondary);">Right Sidewalk</td>
+                                    <td style="padding: 4px 0;">${badge(item.right_sidewalk)} ${conf(item.right_confidence)}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    `;
+
+                    marker.bindPopup(popupContent);
+                    marker.addTo(globalMap);
+                    markers.push(marker);
+                });
+
+                if (markers.length > 0) {
+                    const group = L.featureGroup(markers);
+                    globalMap.fitBounds(group.getBounds().pad(0.1));
+                }
+            } catch (err) {
+                console.error("Global map initialization failed", err);
+                globalMapDiv.innerHTML = `<div class="map-error">Failed to initialize global map framework.</div>`;
+            }
+        })();
+
+        window.scrollToCard = function(imageId) {
+            const searchInput = document.getElementById('search-input');
+            if (searchInput) {
+                searchInput.value = '';
+                searchQuery = '';
+            }
+            currentFilter = 'all';
+            const filterBtns = document.querySelectorAll('.filter-btn');
+            filterBtns.forEach(b => {
+                if (b.getAttribute('data-filter') === 'all') {
+                    b.classList.add('active');
+                } else {
+                    b.classList.remove('active');
+                }
+            });
+            
+            updateFilterView();
+
+            setTimeout(() => {
+                const cardEl = document.getElementById('card-' + imageId);
+                if (cardEl) {
+                    cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    cardEl.classList.remove('flash-highlight');
+                    void cardEl.offsetWidth; // trigger reflow
+                    cardEl.classList.add('flash-highlight');
+                }
+            }, 100);
+        };
     </script>
 </body>
 </html>"""
+
+    html_content = html_content.replace("__MAP_ITEMS_PLACEHOLDER__", json.dumps(map_items))
+    html_content = html_content.replace("__SURFACE_COLORS_PLACEHOLDER__", json.dumps(SURFACE_COLORS))
 
     report_path = os.path.join(reports_path, "debug_report.html")
     with open(report_path, "w", encoding="utf-8") as f:

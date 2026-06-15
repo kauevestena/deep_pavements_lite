@@ -80,15 +80,13 @@ def main():
         print(f"Found {len(metadata['data'])} features.")
 
         # Convert to GeoDataFrame
-        if args.max_images:
+        if args.max_images and len(metadata.get("data", [])) > args.max_images:
             print(
                 f"Sampling up to {args.max_images} image(s) from metadata for processing."
             )
+            metadata["data"] = metadata["data"][:args.max_images]
 
-        gdf = mapillary_data_to_gdf(metadata, max_images=args.max_images)
-
-        if args.max_images and len(gdf) < len(metadata.get("data", [])):
-            print(f"Selected {len(gdf)} image(s) for download and analysis.")
+        gdf = mapillary_data_to_gdf(metadata)
 
         # Download images and get GDF with file paths
         print("Downloading images...")

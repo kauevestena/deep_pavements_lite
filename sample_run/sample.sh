@@ -1,4 +1,4 @@
-python runner.py \
+.venv/bin/python runner.py \
     --lat_min -25.452901 \
     --lon_min -49.270045 \
     --lat_max -25.448231 \
